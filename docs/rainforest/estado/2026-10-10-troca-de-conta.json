@@ -1,0 +1,273 @@
+{
+  "slug": "2026-10-10-troca-de-conta",
+  "titulo": "Troca automatica de conta Claude pelo uso",
+  "criado_em": "2026-10-10",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-10-troca-de-conta.md",
+    "em": "2026-10-10"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-10-troca-de-conta.md",
+    "tarefas": 10,
+    "paralelas": [
+      1,
+      2,
+      3
+    ],
+    "em": "2026-10-10"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-11",
+    "tarefas_ok": 20,
+    "tarefas": 20,
+    "carimbos": [
+      {
+        "tarefa": 1,
+        "hash_base": "539332c5",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T00:29:05.730Z"
+      },
+      {
+        "tarefa": 2,
+        "hash_base": "539332c5",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T00:29:05.730Z"
+      },
+      {
+        "tarefa": 3,
+        "hash_base": "539332c5",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T00:29:05.730Z"
+      },
+      {
+        "tarefa": 4,
+        "hash_base": "2871d16c",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T00:53:21.365Z"
+      },
+      {
+        "tarefa": 8,
+        "hash_base": "6834b326",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T01:17:19.822Z"
+      },
+      {
+        "tarefa": 5,
+        "hash_base": "f82dd373",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T01:25:59.936Z"
+      },
+      {
+        "tarefa": 6,
+        "hash_base": "f82dd373",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T01:25:59.936Z"
+      },
+      {
+        "tarefa": 7,
+        "hash_base": "3d53744b",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T01:35:36.859Z"
+      },
+      {
+        "tarefa": 16,
+        "hash_base": "04c82b06",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T15:13:12.810Z"
+      },
+      {
+        "tarefa": 17,
+        "hash_base": "04c82b06",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T15:13:12.810Z"
+      },
+      {
+        "tarefa": 18,
+        "hash_base": "04c82b06",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T15:13:12.810Z"
+      },
+      {
+        "tarefa": 19,
+        "hash_base": "2bb73676",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T16:11:34.891Z"
+      },
+      {
+        "tarefa": 20,
+        "hash_base": "2bb73676",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-11T16:11:34.891Z"
+      }
+    ],
+    "em": "2026-10-11",
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "caso \"pasta trocada na mão não volta sozinha mesmo depois do reset\""
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "caso \"reserva que entra igual ao login da pasta é recusada e nada muda\""
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "caso \"depois de um 429 a segunda chamada não chega ao servidor\""
+      },
+      {
+        "tarefa": 4,
+        "resultado": "vermelho",
+        "fixture": "caso \"duas rodadas de vigiar simultâneas fazem uma troca só\""
+      },
+      {
+        "tarefa": 5,
+        "resultado": "vermelho",
+        "fixture": "caso \"login da conta errada não grava reserva\""
+      },
+      {
+        "tarefa": 6,
+        "resultado": "n/a",
+        "motivo": "arquivo de comando e documentação, sem lógica"
+      },
+      {
+        "tarefa": 7,
+        "resultado": "vermelho",
+        "fixture": "caso \"agendar --imprimir roda a cada 1 minuto\""
+      },
+      {
+        "tarefa": 8,
+        "resultado": "vermelho",
+        "fixture": "caso \"evento de volta vira aviso com a pasta e a conta\""
+      },
+      {
+        "tarefa": 9,
+        "resultado": "n/a",
+        "motivo": "medição em ambiente real com as credenciais do usuário"
+      },
+      {
+        "tarefa": 10,
+        "resultado": "vermelho",
+        "fixture": "caso \"transferir claude recusa e aponta o /conta\""
+      },
+      {
+        "tarefa": 11,
+        "resultado": "vermelho",
+        "fixture": "caso \"desfazer que falha não lança e devolve desfazer_falhou\""
+      },
+      {
+        "tarefa": 12,
+        "resultado": "vermelho",
+        "fixture": "caso \"(k) volta automática com reserva e estacionado vencidos\""
+      },
+      {
+        "tarefa": 13,
+        "resultado": "vermelho",
+        "fixture": "caso \"preparar recusa o slot esvaziado pela troca\""
+      },
+      {
+        "tarefa": 14,
+        "resultado": "vermelho",
+        "fixture": "caso \"(m) com os dois limites passados, a volta espera o reset mais tardio\""
+      },
+      {
+        "tarefa": 15,
+        "resultado": "n/a",
+        "motivo": "texto e dado de fixture, sem comportamento a inverter"
+      },
+      {
+        "tarefa": 16,
+        "resultado": "vermelho",
+        "fixture": "caso \"volta com o login da pasta vencido há mais de 10 min não espera\""
+      },
+      {
+        "tarefa": 17,
+        "resultado": "vermelho",
+        "fixture": "caso \"desfazer_falhou avisa troca pela metade com os arquivos\""
+      },
+      {
+        "tarefa": 18,
+        "resultado": "vermelho",
+        "fixture": "caso \"renovarOciosos nunca renova o login de uma pasta\""
+      },
+      {
+        "tarefa": 19,
+        "resultado": "vermelho",
+        "fixture": "caso \"troca manual com o login da pasta a 2 min de vencer recusa e não move\""
+      },
+      {
+        "tarefa": 20,
+        "resultado": "vermelho",
+        "fixture": "caso \"falhou com desfeito=false não diz que a troca foi desfeita\""
+      }
+    ],
+    "destinos": [
+      {
+        "pendente": "reagendar o vigia do clone instalado no fechar (hoje aponta para o worktree)",
+        "destino": "descartada",
+        "motivo": "não é código: vira passo do fechar desta sessão (rodar agendar do clone instalado depois do merge)"
+      }
+    ],
+    "comando": "bash scripts/testa-conta.sh; bash scripts/testa-conta-preparar.sh; node scripts/testa-conta-decidir.cjs; node hooks/testa-mod-conta.cjs; node scripts/testa-conta-api.cjs; bash scripts/testa-conta-mover.sh; bash scripts/testa-conta-agendar.sh; bash scripts/testa-transferir.sh; conferir-mutacao x2 (T19,T20)",
+    "saida": "ok: 46 falhou: 0 | ok: 33 falhou: 0 | 32 ok, 0 falha(s) | 25 ok, 0 falha(s) | 12 ok, 0 falha(s) | ok: 18 falhou: 0 | ok: 7 falhou: 0 | 5 passaram, 0 falharam | mutações exit=0 vermelhas nos casos nomeados",
+    "em_voo": []
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "2277fa0d9f11f91364f1be8f8637825475219b7f",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a04944ab0c57cde49",
+        "veredito": "ok",
+        "em": "2026-10-11",
+        "transcrito": "~/.claude-personal/projects/C--Projetos-rainforest-mind/170b1915-c063-4fe8-912c-a4d1b50b044f/subagents/agent-a04944ab0c57cde49.jsonl"
+      }
+    ],
+    "em_voo": [],
+    "em": "2026-10-11",
+    "achados": 0,
+    "rodadas_extra": [
+      {
+        "texto": "Luis 2026-10-11: libera a 4a rodada e escolhe a opcao 1 (troca manual com a mesma guarda de vida do vigia) mais o conserto do aviso desfeito=false",
+        "em": "2026-10-11"
+      }
+    ],
+    "base": "8df6e7b7d3cccfaba148b5cbb63a715e54480e2b",
+    "head": "2277fa0d9f11f91364f1be8f8637825475219b7f"
+  },
+  "verificar": {
+    "status": "ok",
+    "comando": "node scripts/conta.cjs vigiar (real, sem RFM_TEST) + bash scripts/testa-conta.sh",
+    "saida": "sem ação / rodada concluída; reserva-pessoal e reserva-team vencem +8 h, refresh token girado (e3813cf874ce->bb9322a6f78d, 045db4039c0f->aaae07bb3b5c); profile confere team e pessoal; testa-conta.sh ok: 46 falhou: 0",
+    "sensor_externo": "bash scripts/testa-conta.sh",
+    "em": "2026-10-11"
+  },
+  "fechar": {
+    "status": "pendente"
+  }
+}
