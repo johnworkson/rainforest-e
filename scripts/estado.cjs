@@ -1769,6 +1769,209 @@ function avisarCarimbosDivergentes(estado) {
   }
 }
 
+// ---------------------------------------------------------------- integradas e retomada (D4, D5)
+
+/**
+ * `integradas` (D4): tarefas já integradas E marcadas, no bloco `executar`. Funde com a
+ * lista anterior, como `carimbos`: cada `marcar` acrescenta, nunca troca. Recusa antes
+ * de gravar se não for lista de inteiros positivos.
+ *
+ * @returns {string|null} mensagem de recusa, ou null
+ */
+function processarIntegradas(estagio, blocoAnterior, extra) {
+  if (estagio !== 'executar') return null;
+  if (!Object.prototype.hasOwnProperty.call(extra, 'integradas')) return null;
+  const forma = 'Ex.: --json \'{"integradas":[1,2]}\'';
+  const entrada = extra.integradas;
+  if (!Array.isArray(entrada) || entrada.some((n) => !Number.isInteger(n) || n < 1)) {
+    return `RECUSADO: 'integradas' precisa ser uma lista de inteiros positivos.\n${forma}`;
+  }
+  const existentes = Array.isArray(blocoAnterior && blocoAnterior.integradas) ? blocoAnterior.integradas : [];
+  extra.integradas = [...new Set([...existentes, ...entrada])].sort((a, b) => a - b);
+  return null;
+}
+
+/**
+ * Números de tarefa com trailer `Rainforest-Tarefa: <slug>#<n>` nos commits da branch
+ * que não estão na padrão (`<merge-base>..HEAD`). Trailer de outro slug não conta: o
+ * número só vale para o fluxo que o escreveu. A sentinela é o git, não o JSON (D4).
+ */
+function tarefasComTrailer(slug) {
+  const padrao = branchPadrao(RAIZ);
+  const mb = spawnSync(caminhoExecutavel('git'), ['merge-base', 'HEAD', `origin/${padrao}`], {
+    cwd: RAIZ, encoding: 'utf8', stdio: 'pipe',
+  });
+  // Sem `origin/<padrão>` (repo só local), lê o histórico inteiro do HEAD: o trailer
+  // carrega o slug, então commit de outro fluxo continua não contando.
+  const intervalo = mb.status === 0 ? `${mb.stdout.trim()}..HEAD` : 'HEAD';
+  const log = execFileSync(caminhoExecutavel('git'), [
+    'log', intervalo, '--format=%(trailers:key=Rainforest-Tarefa,valueonly)',
+  ], { cwd: RAIZ, encoding: 'utf8' });
+  const nums = new Set();
+  for (const linha of log.split('\n')) {
+    const t = linha.trim();
+    const i = t.lastIndexOf('#');
+    if (i < 0 || t.slice(0, i) !== slug) continue;
+    const n = t.slice(i + 1);
+    if (/^[1-9][0-9]*$/.test(n)) nums.add(Number(n));
+  }
+  return nums;
+}
+
+/**
+ * `retomar` (D5): o que a sessão nova faz ao pegar um `executar` pela metade. Lê as
+ * camadas do plano (`depende de:`), o trailer dos commits e o bloco `executar`, e
+ * devolve JSON. `re_marcar`: integrada no git e não marcada no estado. `redespachar`:
+ * em voo sem trailer, que volta do zero. `proxima_camada`: a primeira camada com tarefa
+ * ainda não marcada, listando o que nela falta (null quando tudo está marcado).
+ *
+ * Convenção do `em_voo`: cada item traz `tarefa` começando pelo número ("3 painel").
+ * Só o número importa aqui. `em_voo` é efêmero e some no `ok`: ausente conta como vazio.
+ */
+function calcularRetomada(slug) {
+  if (!slug || !fs.existsSync(caminho(slug))) {
+    throw new Error(`erro: ${slug || '(sem slug)'} nao existe — rode 'iniciar' primeiro`);
+  }
+  const estado = ler(slug);
+  const planoArq = docDoEstagio('planos', slug, estado);
+  if (!planoArq || !fs.existsSync(planoArq)) {
+    throw new Error(`erro: plano de ${slug} nao existe em ${planoArq}`);
+  }
+  const { extrairTarefas, lerMarkdown } = require('./conferir-fluxo.cjs');
+  const { calcularCamadas, ErroCamadas, parseDependencias } = require('./lib/camadas.cjs');
+  const conteudo = lerMarkdown(planoArq);
+  if (conteudo === null) {
+    throw new Error(`erro: nao consegui ler o plano ${planoArq}`);
+  }
+  let calc;
+  try {
+    calc = calcularCamadas(extrairTarefas(conteudo).map((t) => ({
+      numero: t.numero,
+      dependeDe: parseDependencias(t.dependeDe),
+      arquivos: t.arquivos,
+      paralelaDeclarada: t.paralelaDeclarada,
+    })));
+  } catch (e) {
+    if (!(e instanceof ErroCamadas)) throw e;
+    throw new Error(`RECUSADO: ${e.message}`);
+  }
+
+  const comTrailer = tarefasComTrailer(slug);
+  const exec = estado.executar || {};
+  const contadas = new Set(Array.isArray(exec.integradas) ? exec.integradas : []);
+  const emVooNums = new Set();
+  for (const a of Array.isArray(exec.em_voo) ? exec.em_voo : []) {
+    const m = a && typeof a.tarefa === 'string' ? a.tarefa.match(/^\s*(\d+)/) : null;
+    if (m) emVooNums.add(Number(m[1]));
+  }
+
+  const numeros = calc.camadas.flat().sort((a, b) => a - b);
+  const camadaDe = new Map();
+  calc.camadas.forEach((c, i) => c.forEach((n) => camadaDe.set(n, i + 1)));
+
+  const reMarcar = [];
+  const redespachar = [];
+  // Contada no JSON sem commit com trailer: o estado afirma uma integração que o git não
+  // tem (D4). Não vira `integrada`; sai listada para a sessão olhar.
+  const semTrailer = [];
+  for (const n of numeros) {
+    if (comTrailer.has(n) && !contadas.has(n)) reMarcar.push(n);
+    if (!comTrailer.has(n) && emVooNums.has(n)) redespachar.push(n);
+    if (!comTrailer.has(n) && contadas.has(n)) semTrailer.push(n);
+  }
+
+  const estadoDe = (n) => (comTrailer.has(n) ? 'integrada' : emVooNums.has(n) ? 'em_voo' : 'pendente');
+  const feita = (n) => comTrailer.has(n) && contadas.has(n);
+  // A camada é a primeira com tarefa ainda não marcada; lista o que falta nela. Uma tarefa
+  // integrada no git e não marcada aparece aqui e também em `re_marcar`.
+  let proxima = null;
+  for (const c of calc.camadas) {
+    const faltam = c.filter((n) => !feita(n));
+    if (faltam.length) { proxima = faltam; break; }
+  }
+
+  return {
+    tarefas: numeros.map((n) => ({ numero: n, estado: estadoDe(n), camada: camadaDe.get(n) })),
+    re_marcar: reMarcar,
+    redespachar,
+    contadas_sem_trailer: semTrailer,
+    proxima_camada: proxima,
+  };
+}
+
+function retomar(slug) {
+  let r;
+  try {
+    r = calcularRetomada(slug);
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
+  console.log(JSON.stringify(r, null, 2));
+}
+
+/**
+ * Modelo do painel (D6, D7): o que `scripts/painel-fluxo.cjs` desenha. Sai de
+ * `calcularRetomada` (uma leitura de camada e estado por tarefa, não duas) e do estado,
+ * e não depende de módulo nenhum do painel, para o `marcar` e o CLI do painel não
+ * formarem ciclo de `require`. `parado` lista o estágio que travou (reprovado ou flaky),
+ * para o painel dizer se o fluxo parou sem o leitor adivinhar pela cor.
+ */
+function modeloDoPainel(slug) {
+  const ret = calcularRetomada(slug);
+  const estado = ler(slug);
+  const { extrairTarefas, lerMarkdown } = require('./conferir-fluxo.cjs');
+  const titulos = new Map(extrairTarefas(lerMarkdown(docDoEstagio('planos', slug, estado)))
+    .map((t) => [t.numero, t.nome]));
+  const emVoo = new Map();
+  for (const a of Array.isArray((estado.executar || {}).em_voo) ? estado.executar.em_voo : []) {
+    const m = a && typeof a.tarefa === 'string' ? a.tarefa.match(/^\s*(\d+)/) : null;
+    if (m) emVoo.set(Number(m[1]), typeof a.agente === 'string' ? a.agente : null);
+  }
+  const etapas = ['arqueologia', 'design', 'plano', ...EXECUCAO];
+  const datas = etapas.map((e) => (estado[e] && estado[e].em) || '').filter(Boolean).sort();
+  const parado = etapas
+    .filter((e) => estado[e] && (estado[e].status === 'reprovado' || estado[e].status === 'flaky'))
+    .map((e) => ({ estagio: e, status: estado[e].status }));
+  const revisar = estado.revisar || {};
+  // Iteração do laço por tarefa (D6): o carimbo mais recente de cada uma. Sem carimbo, não há número.
+  const iteracoes = new Map(carimbosMaisRecentes(Array.isArray((estado.executar || {}).carimbos)
+    ? estado.executar.carimbos : []).map((c) => [c.tarefa, c.iteracao]));
+  return {
+    slug,
+    titulo: estado.titulo || slug,
+    projeto: RAIZ,
+    estagio_atual: proximo(estado),
+    ultimo_marcar: datas.length ? datas[datas.length - 1] : null,
+    parado,
+    veredito_revisar: revisar.status === 'ok' || revisar.status === 'reprovado' ? revisar.status : null,
+    tarefas: ret.tarefas.map((t) => ({
+      numero: t.numero,
+      titulo: titulos.get(t.numero) || '',
+      camada: t.camada,
+      estado: t.estado,
+      agente: emVoo.get(t.numero) || null,
+      iteracao: Number.isInteger(iteracoes.get(t.numero)) ? iteracoes.get(t.numero) : null,
+    })),
+    re_marcar: ret.re_marcar,
+    proxima_camada: ret.proxima_camada,
+  };
+}
+
+/**
+ * Regenera o painel ao fim de `marcar` de executar, revisar e verificar (D6). Falha em
+ * qualquer ponto vira aviso no stderr, e o `marcar` segue com o mesmo exit: o painel é
+ * leitura do estado, não parte da gravação.
+ */
+function regenerarPainel(slug) {
+  try {
+    const { gravarPainel } = require(path.join(__dirname, 'painel-fluxo.cjs'));
+    gravarPainel(modeloDoPainel(slug));
+  } catch (e) {
+    console.error(`aviso: painel: ${e && e.message ? e.message : e}`);
+  }
+}
+
 // ---------------------------------------------------------------- CLI
 
 // Flags aceitas por subcomando. Qualquer flag fora desta lista e recusada ANTES
@@ -1788,6 +1991,7 @@ const FLAGS_POR_SUBCOMANDO = {
   veredito: ['slug', 'estagio', 'veredito', 'agente', 'agente-id', 'transcrito'],
   'registrar-flake': ['slug', 'tarefa', 'gate'],
   'liberar-teto': ['slug', 'motivo'],
+  retomar: ['slug'],
   leve: ['motivo', 'repo'],
 };
 
@@ -1924,6 +2128,11 @@ function main() {
     if (!p) return;
     console.log(p);
     process.exit(2);
+  }
+
+  if (cmd === 'retomar') {
+    retomar(arg('slug'));
+    return;
   }
 
   if (cmd === 'leve') {
@@ -2603,6 +2812,15 @@ function main() {
       }
     }
 
+    // D4/D5: `integradas` funde com a lista anterior e recusa antes de gravar.
+    {
+      const recusa_integradas = processarIntegradas(estagio, estado[estagio], extra);
+      if (recusa_integradas) {
+        console.error(recusa_integradas);
+        process.exit(2);
+      }
+    }
+
     // #449: pendencia so sai com destino — valida `pendentes`/`destinos` do --json
     // antes de qualquer gate que dispara processo, e antes do `gravar`.
     let avisoPendencias = '';
@@ -2847,6 +3065,7 @@ function main() {
     const p = proximo(estado);
     console.log(p ? `proximo: ${p}` : 'completo');
     carimbarFluxo({ slug, estagio, aberto: p });
+    if (['executar', 'revisar', 'verificar'].includes(estagio)) regenerarPainel(slug);
     return;
   }
 
@@ -2855,4 +3074,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { novo, proximo, faltando, estaFechado, EXECUCAO, PRE_REQUISITOS, DIR_ESTADO, caminhoComTil };
+module.exports = { novo, proximo, faltando, estaFechado, EXECUCAO, PRE_REQUISITOS, DIR_ESTADO, caminhoComTil, calcularRetomada, modeloDoPainel };
