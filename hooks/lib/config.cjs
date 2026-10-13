@@ -62,6 +62,11 @@ const CHAVES = {
     padrao: true,
     descricao: 'barra `gh issue close` direto, palavras-chave falsas em português, e `gh pr create/edit/merge`, `gh issue create/comment` sem evidência/com falsa chave',
   },
+  'gate-merge-auto': {
+    tipo: 'boolean',
+    padrao: true,
+    descricao: 'barra `gh pr merge --auto`: neste repo sem check obrigatório mergeia na hora, sem esperar o CI',
+  },
   'gate-agente-em-voo': {
     tipo: 'boolean',
     padrao: true,
@@ -253,6 +258,15 @@ const CHAVES = {
     tipo: 'boolean',
     padrao: false,
     descricao: 'o revisor em Codex revisa a última resposta no Stop; falha fechada',
+  },
+  // Sentido invertido como `branch-forcar`: ligada, AUTORIZA o merge do PR pelo
+  // `fechar` depois do CI verde. Quem lê (`scripts/publicar-branch.cjs`) não usa
+  // `ligado()`, que devolve `true` em erro; lê `resolverConfig().valores` e trata
+  // falha como `false`. Padrão falso: merge sem revisão humana é mão única.
+  'fechar-mergear': {
+    tipo: 'boolean',
+    padrao: false,
+    descricao: 'o fechar mergeia o PR (squash) depois do CI verde; desligada, para no PR aberto',
   },
 };
 
