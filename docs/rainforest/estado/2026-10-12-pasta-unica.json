@@ -1,0 +1,181 @@
+{
+  "slug": "2026-10-12-pasta-unica",
+  "titulo": "Uma pasta só de config do Claude Code",
+  "criado_em": "2026-10-12",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-12-pasta-unica.md",
+    "em": "2026-10-12"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-12-pasta-unica.md",
+    "tarefas": 5,
+    "paralelas": [
+      1
+    ],
+    "em": "2026-10-12"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-12",
+    "tarefas_ok": 6,
+    "tarefas": 7,
+    "carimbos": [
+      {
+        "tarefa": 1,
+        "hash_base": "f2edcee4",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-12T13:39:14.636Z"
+      },
+      {
+        "tarefa": 1,
+        "hash_base": "4dbbfcf",
+        "iteracao": 2,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-12T13:53:38.704Z"
+      },
+      {
+        "tarefa": 6,
+        "hash_base": "4dbbfcf",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-12T13:53:38.704Z"
+      },
+      {
+        "tarefa": 2,
+        "hash_base": "7759e7d5",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-12T14:07:38.898Z"
+      },
+      {
+        "tarefa": 3,
+        "hash_base": "0ee70f9a",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-12T14:36:35.557Z"
+      },
+      {
+        "tarefa": 4,
+        "hash_base": "0ea423cc",
+        "iteracao": 1,
+        "sessao": "170b1915-c063-4fe8-912c-a4d1b50b044f",
+        "ts": "2026-10-12T15:06:28.583Z"
+      }
+    ],
+    "em": "2026-10-12",
+    "comando": "bash scratchpad/rodar-baterias.sh (HOME falso, canario) + bash scripts/testa-conta-unificar.sh",
+    "saida": "testa-conta 49/0; unificar 105/0; unificar-profile 34/0/0 pulados; mover 26/0; uma-pasta 20/0; preparar 33/0; agendar 7/0; versao 5/0; gate 80/0; mod-conta 25/0; CANARIO-INTACTO",
+    "destinos": [
+      {
+        "pendente": "T5 migracao real: depende da 1.63.0 instalada (o vigia e reagendado para o clone instalado); roda depois do merge, com o Luis e as janelas fechadas",
+        "destino": "descartada",
+        "motivo": "nao e codigo: vira passo do fechar desta sessao (merge, atualizar plugin, unificar --aplicar --profile com o Luis), relatorio no PR de fechamento"
+      }
+    ],
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-conta-uma-pasta.sh, caso \"uma pasta: status lista só trabalho e vigiar troca para a reserva pessoal\""
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-conta-unificar.sh, casos \"memoria de mesmo nome...\" e rodada 6 achados 1, 2 e 3 (registro pessoal, releitura do .claude.json, morte6)"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-conta-unificar-profile.sh, caso \"profile real reescrito: claude unico remove CLAUDE_CONFIG_DIR e chama o binario\""
+      },
+      {
+        "tarefa": 4,
+        "resultado": "n/a",
+        "motivo": "texto e numero de versao, sem comportamento a inverter"
+      },
+      {
+        "tarefa": 5,
+        "resultado": "n/a",
+        "motivo": "migracao real na maquina do Luis; sem linha de producao a inverter"
+      },
+      {
+        "tarefa": 6,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-publicacao-destino.sh, caso \"Write de arquivo NOVO com marcador no topo do conteudo -> passa\" (mutacao a mao: catraca exit 4 por baseline na copia temporaria)"
+      },
+      {
+        "tarefa": 7,
+        "resultado": "vermelho",
+        "fixture": "testa-conta-uma-pasta.sh, caso \"pasta padrão: a troca grava o oauthAccount no .claude.json de fora da pasta\"; rodada 6: testa-conta-mover.sh caso (h) e testa-conta.sh caso (zq)"
+      }
+    ],
+    "reaberturas": 5,
+    "em_voo": [],
+    "rodada": 6
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "e2b84ae9ed4f46f76fece43bd56cb396f58103f1",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "ab0bb38e07319bd1e",
+        "veredito": "ok",
+        "em": "2026-10-12",
+        "transcrito": "~/.claude-personal/projects/C--Projetos-rainforest-mind/170b1915-c063-4fe8-912c-a4d1b50b044f/subagents/agent-ab0bb38e07319bd1e.jsonl"
+      }
+    ],
+    "em_voo": [],
+    "em": "2026-10-12",
+    "achados": 5,
+    "rodadas_extra": [
+      {
+        "texto": "Luis (2026-10-12): ajustar tudo na 4a rodada — achados 1, 2 e 3 da 3a revisao; o 2 vira tarefa 7 do plano",
+        "em": "2026-10-12"
+      },
+      {
+        "texto": "Luis (2026-10-12): sim, 5a rodada para os 5 achados da 4a revisao",
+        "em": "2026-10-12"
+      },
+      {
+        "texto": "Luis: recomendado (opcao A) - 6a rodada para os 5 achados da 5a revisao; revisao seguinte restrita aos consertos",
+        "em": "2026-10-12"
+      }
+    ],
+    "severidade": "todos baixos",
+    "base": "86df17857ccf051ba05fa4b19ec257a0db02e7f7",
+    "head": "e2b84ae9ed4f46f76fece43bd56cb396f58103f1",
+    "escopo": "rodada 6 restrita (decisao do Luis)"
+  },
+  "verificar": {
+    "status": "ok",
+    "comando": "RFM_TEST=1 bash scripts/testa-conta-unificar.sh (e demais baterias de conta com HOME falso)",
+    "saida": "testa-conta 49/0; testa-conta-unificar 105/0; unificar-profile 34/0/0; mover 26/0; uma-pasta 20/0; preparar 33/0; agendar 7/0; versao 5/0; gate-publicacao 80/0; mod-conta 25/0; canario do home falso intacto",
+    "sensor_externo": "bash scripts/testa-conta-unificar.sh",
+    "destinos": [
+      {
+        "pendente": "T5 migracao real com o Luis (janelas fechadas)",
+        "destino": "descartada",
+        "motivo": "nao e codigo: passo do fechar, depois do merge e do plugin 1.63.0 instalado"
+      },
+      {
+        "pendente": "5 achados baixos da 6a revisao",
+        "destino": "plantada",
+        "ref": "#503"
+      }
+    ],
+    "em": "2026-10-13"
+  },
+  "fechar": {
+    "status": "pendente"
+  }
+}

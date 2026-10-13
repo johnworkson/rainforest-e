@@ -226,6 +226,74 @@ function cenario(nome) {
     && Array.isArray(r.pendentes) && r.pendentes.length === 1 && path.resolve(r.pendentes[0]) === path.resolve(arqs.sai));
 }
 
+// (g) rodada 5, achado 5: uma chave alheia muda no .claude.json entre a conferência e a gravação dele (sessão viva).
+// A alteração entra no ponto da troca em que a reserva de saída acabou de ser gravada, antes da vez do .claude.json:
+// o oauthAccount tem de ser o do dono, e a chave alheia tem de sobreviver.
+{
+  const { pasta, arqs } = cenario('g');
+  const renomear = fs.renameSync;
+  let injetou = false;
+  fs.renameSync = function (de, para, ...resto) {
+    if (!injetou && path.resolve(String(para)) === path.resolve(arqs.sai)) {
+      injetou = true;
+      const atual = ler(arqs.claude);
+      atual.chaveAlheia = 'alterada-na-janela';
+      escrever(arqs.claude, atual);
+    }
+    return renomear.call(fs, de, para, ...resto);
+  };
+  let r;
+  try {
+    r = mover({ pasta, reservaEntra: arqs.entra, reservaSai: arqs.sai, dono: DONO });
+  } finally {
+    fs.renameSync = renomear;
+  }
+  const depois = ler(arqs.claude);
+  afirma('(g) a alteração de chave alheia entrou na janela, antes da gravação do .claude.json', injetou === true);
+  afirma('(g) a troca sai ok com a chave alheia alterada na janela', r.ok === true);
+  afirma('(g) a chave alheia alterada na janela sobrevive, e o oauthAccount é o do dono',
+    depois.chaveAlheia === 'alterada-na-janela' && JSON.stringify(depois.oauthAccount) === JSON.stringify(DONO));
+}
+
+// (h) rodada 6, achado 4: a falha vem DEPOIS da escrita do .claude.json (a leitura final da reserva de saída
+// lança). O desfazer tem de devolver o oauthAccount ORIGINAL (ANTIGO, não o do dono) e manter a chave alheia.
+{
+  const { pasta, arqs } = cenario('h');
+  escrever(arqs.claude, { numStartups: 3, oauthAccount: ANTIGO, projects: {}, chaveAlheia: 'preservada-antes' });
+  const hs = [arqs.cred, arqs.entra, arqs.sai].map(shaBytes);
+  const renomear = fs.renameSync;
+  const lerArq = fs.readFileSync;
+  let claudeGravado = false;
+  let falhou = false;
+  fs.renameSync = function (de, para, ...resto) {
+    if (path.resolve(String(para)) === path.resolve(arqs.claude)) claudeGravado = true;
+    return renomear.call(fs, de, para, ...resto);
+  };
+  fs.readFileSync = function (arq, ...resto) {
+    if (claudeGravado && path.resolve(String(arq)) === path.resolve(arqs.sai)) {
+      falhou = true;
+      throw Object.assign(new Error('falha simulada na leitura final da reserva de saída'), { code: 'EIO' });
+    }
+    return lerArq.call(fs, arq, ...resto);
+  };
+  let r;
+  try {
+    r = mover({ pasta, reservaEntra: arqs.entra, reservaSai: arqs.sai, dono: DONO });
+  } finally {
+    fs.renameSync = renomear;
+    fs.readFileSync = lerArq;
+  }
+  const depois = ler(arqs.claude);
+  afirma('(h) a falha entrou depois da gravação do .claude.json', falhou === true);
+  afirma('(h) a falha pós-gravação devolve gravacao', r.ok === false && r.motivo === 'gravacao');
+  afirma('(h) credenciais e reserva de entrada/saída com o mesmo sha256 de antes',
+    [arqs.cred, arqs.entra, arqs.sai].map(shaBytes).every((h, i) => h === hs[i]));
+  afirma('(h) o oauthAccount volta ao ORIGINAL (ANTIGO), não ao do dono',
+    JSON.stringify(depois.oauthAccount) === JSON.stringify(ANTIGO));
+  afirma('(h) a chave alheia e numStartups sobrevivem ao desfazer',
+    depois.chaveAlheia === 'preservada-antes' && depois.numStartups === 3);
+}
+
 console.log(`ok: ${ok}   falhou: ${falhas}`);
 process.exit(falhas ? 1 : 0);
 JS

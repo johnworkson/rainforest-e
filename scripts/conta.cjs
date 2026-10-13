@@ -24,6 +24,8 @@ const { spawnSync } = require('node:child_process');
 const { mover, gravarAtomico: gravarCred, prefixo: prefixoDoLogin } = require('./lib/conta-mover.cjs');
 const { acharExecutavelClaude } = require('./lib/achar-executavel-claude.cjs');
 const API = require('./lib/conta-api.cjs');
+const UNIFICAR = require('./lib/conta-unificar.cjs');
+const { sessoesVivas, JANELA_COLOCADA_MS } = require('../hooks/lib/contexto-sessao.cjs');
 
 // Padrão dos limiares (D4). Vale o que o arquivo <dados>/contas/config.json diz, chave a chave.
 const PADRAO_CONFIG = { trocarEm: 97, destinoMax5h: 60, destinoMaxSemana: 85 };
@@ -37,7 +39,6 @@ const LEITURA_MAX_MS = 15 * 60 * 1000;
 // Aviso repetido (mesmo tipo e motivo) não vira uma linha por minuto: 1 por hora.
 const AVISO_REPETIDO_MS = 60 * 60 * 1000;
 const CONTAS = ['team', 'pessoal'];
-const PASTAS = ['trabalho', 'pessoal'];
 const LIMITES = ['five_hour', 'seven_day'];
 // Nome da CLI -> conta interna. A casa de cada pasta é a conta de mesmo nome.
 const CONTA_CLI = { trabalho: 'team', pessoal: 'pessoal' };
@@ -53,12 +54,25 @@ function pastasDir() {
   };
 }
 
+// O .claude.json da pasta de trabalho mora fora dela, em ~/.claude.json (só bateria troca o caminho).
+function claudeJsonTrabalho() {
+  return (process.env.RFM_TEST === '1' && process.env.RFM_CONTA_CLAUDE_JSON) || path.join(os.homedir(), '.claude.json');
+}
+
+// Pastas que existem nesta máquina (D6). A de trabalho sempre conta; a pessoal só se a pasta existir.
+// Nome exato: a aposentada (.claude-personal.aposentada) não é a pessoal.
+function pastasAtivas() {
+  const dirs = pastasDir();
+  const pessoal = fs.existsSync(dirs.pessoal);
+  return pessoal ? ['trabalho', 'pessoal'] : ['trabalho'];
+}
+
 // Pasta da sessão que chamou (D7): a do CLAUDE_CONFIG_DIR; sem ele, o Claude Code usa ~/.claude.
 function pastaDaSessao() {
   const norm = (p) => path.resolve(p).split(path.sep).join('/').toLowerCase();
   const dirs = pastasDir();
   const atual = norm(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'));
-  return PASTAS.find((p) => norm(dirs[p]) === atual) || 'trabalho';
+  return pastasAtivas().find((p) => norm(dirs[p]) === atual) || 'trabalho';
 }
 
 // A pasta de dados da conta é SEMPRE a do usuário. A resolução padrão do plugin prefere
@@ -90,8 +104,16 @@ function ctx() {
 }
 
 const credArq = (c, P) => path.join(c.pastas[P], '.credentials.json');
-const claudeArq = (c, P) => path.join(c.pastas[P], '.claude.json');
+// A pasta padrão lê o .claude.json de fora dela (~/.claude.json); a pessoal, o de dentro (tarefa 7, rodada 4).
+const claudeArq = (c, P) => (P === 'trabalho' ? claudeJsonTrabalho() : path.join(c.pastas[P], '.claude.json'));
 const reservaArq = (c, conta) => path.join(c.contas, `reserva-${conta}.json`);
+// Marca do vigia desagendado por unificar: gravada antes do /Delete, apagada só depois do /Create. Rodada nova
+// que a encontra sabe que o reagendamento ficou para trás, mesmo com /Query 1 (a tarefa já foi apagada).
+const marcaVigioArq = (c) => path.join(c.contas, 'vigia-desagendado-por-unificar.json');
+function gravarMarcaVigio(c) {
+  fs.mkdirSync(c.contas, { recursive: true });
+  fs.writeFileSync(marcaVigioArq(c), JSON.stringify({ em: Date.now() }) + '\n');
+}
 // Login da pasta guardado enquanto ela está fora de casa: um por pasta (P = trabalho | pessoal).
 const estacionadoArq = (c, P) => path.join(c.contas, `estacionado-${P}.json`);
 
@@ -148,7 +170,7 @@ function gravarAtomico(arq, obj) {
 function lerEstado(c) {
   const e = lerJson(c.estado, {});
   const pastas = {};
-  for (const P of PASTAS) {
+  for (const P of pastasAtivas()) {
     const gravado = (e.pastas || {})[P] || {};
     pastas[P] = {
       manual: false,
@@ -330,7 +352,7 @@ function reservaPronta(c, conta) {
 // a reserva a D13 mantém renovada, então o uso da conta continua legível e a troca não fica cega.
 function loginsDaConta(c, estado, conta) {
   const logins = [];
-  const P = PASTAS.find((p) => estado.pastas[p].conta === conta && credDaPasta(c, p));
+  const P = pastasAtivas().find((p) => estado.pastas[p].conta === conta && credDaPasta(c, p));
   if (P) logins.push(credDaPasta(c, P).claudeAiOauth);
   const r = reservaPronta(c, conta);
   if (r) logins.push(r.claudeAiOauth);
@@ -416,7 +438,7 @@ async function renovarOciosos(c, _estado) {
 // Sem a trava (sobTrava falso) só se lê: nenhum evento, nenhuma gravação cabe ao chamador.
 async function registrarCasas(c, estado, sobTrava) {
   let mudou = false;
-  for (const P of PASTAS) {
+  for (const P of pastasAtivas()) {
     const info = estado.pastas[P];
     if (info.conta !== info.casa) continue;
     const cred = credDaPasta(c, P);
@@ -476,7 +498,7 @@ function falhasDeRenovacao(c) {
 // Todo login guardado em arquivo: as duas pastas, as duas reservas e os dois estacionados.
 function loginsGuardados(c) {
   const itens = [];
-  for (const P of PASTAS) {
+  for (const P of pastasAtivas()) {
     const cred = credDaPasta(c, P);
     if (cred) itens.push([`pasta-${P}`, cred]);
   }
@@ -484,7 +506,7 @@ function loginsGuardados(c) {
     const r = reservaPronta(c, conta);
     if (r) itens.push([`reserva-${conta}`, r]);
   }
-  for (const P of PASTAS) {
+  for (const P of pastasAtivas()) {
     const e = estacionadoPronto(c, P);
     if (e) itens.push([`estacionado-${P}`, e]);
   }
@@ -513,7 +535,7 @@ function avisarDuplicadas(c, duplicadas) {
 const MSG_SLOT_EM_USO = (alvo) => `a reserva de ${alvo} está em uso numa pasta trocada: volte a pasta antes de preparar`;
 function slotEmUso(c, conta) {
   const estado = lerEstado(c);
-  return PASTAS.some((P) => estado.pastas[P].conta === conta && estado.pastas[P].conta !== estado.pastas[P].casa);
+  return pastasAtivas().some((P) => estado.pastas[P].conta === conta && estado.pastas[P].conta !== estado.pastas[P].casa);
 }
 
 // Reserva de <conta> como o preparar a vê: { obj, ilegivel }. Arquivo que não é JSON conta como
@@ -538,7 +560,13 @@ function marcaDaReserva(r) {
 const MSG_PASTA_FORA = (alvo) => `a pasta ${alvo} está fora de casa: volte a pasta antes de preparar`;
 function pastaForaDeCasa(c, P) {
   const info = lerEstado(c).pastas[P];
-  return info.conta !== info.casa;
+  return Boolean(info) && info.conta !== info.casa;
+}
+
+// Contas cuja reserva precisa estar pronta: uma pasta entra na conta que não é a casa dela (D9).
+// Duas pastas: team e pessoal. Só a de trabalho (casa team): só pessoal.
+function contasDeReserva() {
+  return CONTAS.filter((conta) => pastasAtivas().some((P) => CONTA_CLI[P] !== conta));
 }
 
 function contaDoEmail(estado, email) {
@@ -579,7 +607,7 @@ async function aplicarTroca(c, estado, { P, para, tipo, manual, travouPor, motiv
   const claudeAntes = lerJson(claudeArq(c, P));
   const { entra, sai } = arqsDaTroca(c, P, de, para);
   if (!fs.existsSync(sai)) gravarAtomico(sai, {});
-  const r = mover({ pasta, reservaEntra: entra, reservaSai: sai, dono });
+  const r = mover({ pasta, reservaEntra: entra, reservaSai: sai, dono, claudeJson: claudeArq(c, P) });
   if (!r.ok) return falhou(r.motivo, r.pendentes);
 
   const esperado = estado.contas[para].email;
@@ -596,6 +624,7 @@ async function aplicarTroca(c, estado, { P, para, tipo, manual, travouPor, motiv
       reservaEntra: sai,
       reservaSai: entra,
       dono: claudeAntes.oauthAccount,
+      claudeJson: claudeArq(c, P),
     });
     const causa = `servidor confirmou ${confirmado}, esperado ${esperado}`;
     // O desfazer também falhou: a troca ficou pela metade e o aviso precisa dos arquivos pendentes.
@@ -652,7 +681,7 @@ async function statusLido(c, sobTrava) {
   for (const d of duplicadas) {
     linhas.push(`aviso: o mesmo login (${d.h}) está em ${d.nomes.join(' e ')}: não troque nem renove até separar`);
   }
-  for (const P of PASTAS) {
+  for (const P of pastasAtivas()) {
     const cred = credDaPasta(c, P);
     if (!cred) {
       linhas.push(`pasta ${P}: sem credencial`);
@@ -714,7 +743,8 @@ async function trocar(c, args) {
     return sair(2, 'uso: trocar <pessoal|trabalho> [--pasta trabalho|pessoal]');
   }
   const P = valorDe(args, '--pasta') || pastaDaSessao();
-  if (!PASTAS.includes(P)) return sair(2, '--pasta: use trabalho ou pessoal');
+  if (!Object.hasOwn(CONTA_CLI, P)) return sair(2, '--pasta: use trabalho ou pessoal');
+  if (!pastasAtivas().includes(P)) return sair(2, `--pasta ${P}: a pasta não existe nesta máquina`);
   const para = CONTA_CLI[alvo];
 
   const lock = c.lock;
@@ -730,8 +760,9 @@ async function trocar(c, args) {
       gravarEstado(c, estado);
       return sair(0, `pasta ${P} já está na conta ${NOME[para]}`);
     }
-    const outra = PASTAS.find((p) => p !== P);
-    if (estado.pastas[outra].conta !== estado.pastas[outra].casa) {
+    // Com uma pasta só não há outra para olhar: trocar não exige "a outra pasta em casa".
+    const outra = pastasAtivas().find((p) => p !== P);
+    if (outra && estado.pastas[outra].conta !== estado.pastas[outra].casa) {
       return sair(1, `a pasta ${outra} está fora de casa: não troco as duas ao mesmo tempo`);
     }
     const volta = para === casa;
@@ -779,7 +810,7 @@ async function vigiar(c) {
     await renovarOciosos(c, estado);
 
     const pastas = {};
-    for (const P of PASTAS) pastas[P] = infoPasta(c, estado, P);
+    for (const P of pastasAtivas()) pastas[P] = infoPasta(c, estado, P);
     const usos = await coletarUsos(c, estado);
     const reservas = {};
     for (const conta of CONTAS) {
@@ -858,6 +889,7 @@ async function preparar(c, args) {
   if (!pegarTrava(c.lock)) return sair(1, 'outra rodada em curso: tente de novo em instantes');
   let esperado;
   let antes = null;
+  let registrar = false;
   try {
     const estado = lerEstado(c);
     if (await registrarCasas(c, estado, true)) gravarEstado(c, estado);
@@ -885,7 +917,10 @@ async function preparar(c, args) {
       if (incerto) return sair(1, `não consegui confirmar que a reserva de ${alvo} morreu (${incerto}): tente de novo`);
     }
     esperado = (estado.contas[conta] || {}).email;
-    if (!esperado) return sair(1, `conta ${alvo} sem registro: rode status com a pasta ${alvo} em casa`);
+    // Uma pasta só (D6): a pessoal não é casa de pasta nenhuma, então registrarCasas não a registra.
+    // Sem registro, o login segue sem e-mail e a conta vem do /profile dele (abaixo, sob a trava).
+    registrar = !esperado && alvo === 'pessoal' && pastasAtivas().length === 1;
+    if (!esperado && !registrar) return sair(1, `conta ${alvo} sem registro: rode status com a pasta ${alvo} em casa`);
   } finally {
     soltarTrava(c.lock);
   }
@@ -893,7 +928,7 @@ async function preparar(c, args) {
   // RFM_CONTA_CLAUDE (só com RFM_TEST=1) é um script node: roda pelo node, como o CLI real.
   const exe = (process.env.RFM_TEST === '1' && process.env.RFM_CONTA_CLAUDE) || acharExecutavelClaude();
   if (!exe) return sair(1, 'claude não encontrado no PATH (defina RFM_CLAUDE_EXECUTAVEL)');
-  const argsLogin = ['auth', 'login', '--claudeai', '--email', esperado];
+  const argsLogin = esperado ? ['auth', 'login', '--claudeai', '--email', esperado] : ['auth', 'login', '--claudeai'];
   const opcoes = { stdio: 'inherit', env: {} };
 
   const tmp = fs.mkdtempSync(path.join(c.contas, 'login-'));
@@ -909,7 +944,12 @@ async function preparar(c, args) {
     const cred = lerJson(path.join(tmp, '.credentials.json'), null);
     if (!cred || !cred.claudeAiOauth) return sair(1, 'o login não gravou credencial: nada gravado');
     const veio = await API.dono(cred.claudeAiOauth.accessToken);
-    if (veio.email !== esperado) return sair(3, 'o navegador autorizou ' + veio.email);
+    if (esperado && veio.email !== esperado) return sair(3, 'o navegador autorizou ' + veio.email);
+    // Sem conta registrada, o registro sai do login: o oauthAccount que o CLI gravou tem de ser dele.
+    const oauthDoLogin = registrar ? (lerJson(path.join(tmp, '.claude.json'), {}) || {}).oauthAccount : null;
+    if (registrar && (!oauthDoLogin || oauthDoLogin.emailAddress !== veio.email)) {
+      return sair(1, 'o login não trouxe a conta dele (oauthAccount): nada gravado');
+    }
 
     // Grava sob a trava e reconfere: durante o login o vigia pode ter trocado a pasta.
     if (!(await pegarTravaEspera(c.lock, ESPERA_TRAVA_MS))) {
@@ -920,12 +960,20 @@ async function preparar(c, args) {
       if (pastaForaDeCasa(c, alvo) || slotEmUso(c, conta) || marcaDaReserva(reservaExistente(c, conta)) !== antes) {
         return sair(1, 'o estado mudou durante o login: nada gravado; rode preparar de novo');
       }
+      if (registrar) {
+        const agora = lerEstado(c);
+        if (Object.values(agora.contas).some((x) => x.email === veio.email)) {
+          return sair(3, `o navegador autorizou ${veio.email}, que já é a conta de trabalho: nada gravado`);
+        }
+        agora.contas[conta] = { email: veio.email, oauthAccount: oauthDoLogin };
+        gravarEstado(c, agora);
+      }
       gravarCred(reservaArq(c, conta), JSON.stringify({ claudeAiOauth: cred.claudeAiOauth }, null, 2) + '\n');
       const verbo = antes ? 'refeita' : 'gravada';
 
-      const faltam = [['trabalho', 'team'], ['pessoal', 'pessoal']]
-        .filter(([, k]) => !reservaPronta(c, k))
-        .map(([nome]) => nome);
+      const faltam = contasDeReserva()
+        .filter((k) => !reservaPronta(c, k))
+        .map((k) => NOME[k]);
       if (!faltam.length) {
         const estado = lerEstado(c);
         estado.automatico = true;
@@ -965,9 +1013,9 @@ function linhaDoComando(exe, argv) {
   return [exe, ...argv].map((a) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)).join(' ');
 }
 
-function montarAgendamento() {
+function montarAgendamento(script = __filename) {
   const conhost = path.join(raizWindows(), 'System32', 'conhost.exe');
-  const acao = `"${conhost}" --headless "${process.execPath}" "${__filename}" vigiar`;
+  const acao = `"${conhost}" --headless "${process.execPath}" "${script}" vigiar`;
   const argv = ['/Create', '/TN', TAREFA, '/SC', 'MINUTE', '/MO', '1', '/F', '/TR', acao];
   return argv;
 }
@@ -978,7 +1026,7 @@ function agendar(c, args) {
     console.log(linhaDoComando(schtasksExe(), argv));
     return 0;
   }
-  const faltam = ['team', 'pessoal'].filter((conta) => !reservaPronta(c, conta));
+  const faltam = contasDeReserva().filter((conta) => !reservaPronta(c, conta));
   if (faltam.length) {
     return sair(1, `não agendo: falta a reserva de ${faltam.map((k) => NOME[k]).join(' e ')} (rode preparar antes)`);
   }
@@ -999,6 +1047,270 @@ function desagendar() {
   return sair(codigo, codigo ? 'schtasks não removeu o vigia' : 'vigia desagendado');
 }
 
+// Migração para a pasta única (plano 2026-10-12-pasta-unica, tarefa 2; D7). Sem --aplicar só relata.
+const FLAGS_UNIFICAR = ['--aplicar', '--ajuda', '--profile <arquivo>'];
+// Explicação do --profile no --ajuda. Sem --profile o perfil do PowerShell não é tocado: a bateria
+// e qualquer uso sem a flag nunca resolvem o $PROFILE real.
+const AJUDA_PERFIL = [
+  'perfil: sem --aplicar, mostra as linhas do perfil do PowerShell que mudariam, sem gravar nada;',
+  'com --aplicar, grava depois da migração e guarda o original em <arquivo>.bak-pasta-unica.',
+  'Sem --profile o perfil do PowerShell não é tocado.',
+];
+
+// Processos claude.exe vivos. Em bateria (RFM_TEST=1) a lista vem de RFM_CONTA_PROCESSOS e o tasklist
+// nunca roda. Não saber a lista é motivo para não migrar: falha fechada.
+function processosClaudeVivos() {
+  if (process.env.RFM_TEST === '1') {
+    return (process.env.RFM_CONTA_PROCESSOS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  }
+  const r = spawnSync(path.join(raizWindows(), 'System32', 'tasklist.exe'), ['/FI', 'IMAGENAME eq claude.exe', '/FO', 'CSV', '/NH'], { encoding: 'utf8' });
+  if (r.error || r.status !== 0) throw new Error('não consegui listar os processos (tasklist)');
+  return /"claude\.exe"/i.test(r.stdout) ? ['claude.exe'] : [];
+}
+
+// Sessão viva no sessoes.json da pasta de dados, pela mesma regra de janela do contexto (sem pid morto).
+// Arquivo ilegível não diz que nenhuma sessão está viva: falha fechada.
+function haSessaoViva(c) {
+  let state = {};
+  try {
+    state = JSON.parse(fs.readFileSync(path.join(c.dados, 'sessoes.json'), 'utf8'));
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw new Error('sessoes.json ilegível: não dá para confirmar que nenhuma sessão está viva');
+  }
+  return sessoesVivas(state, Date.now(), JANELA_COLOCADA_MS).length > 0;
+}
+
+// Igual ao chamarSchtasks: .js/.cjs (só em bateria) roda pelo node. Erro de execução vira código 1.
+// Sem CLAUDE_CONFIG_DIR no ambiente: a CLI cai na pasta padrão (~/.claude), que é a pasta de trabalho.
+// Herdar a da sessão que chamou (a pessoal, se o /conta roda de lá) instalaria o plugin na conta errada.
+function chamarClaude(argv) {
+  const exe = (process.env.RFM_TEST === '1' && process.env.RFM_CONTA_CLAUDE_BIN) || acharExecutavelClaude();
+  if (!exe) return 1;
+  const env = { ...process.env };
+  delete env.CLAUDE_CONFIG_DIR;
+  const opcoes = { stdio: 'inherit', env };
+  const r = /\.(c|m)?js$/i.test(exe) ? spawnSync(process.execPath, [exe, ...argv], opcoes) : spawnSync(exe, argv, opcoes);
+  return r.error || r.status === null ? 1 : r.status;
+}
+
+function unificar(c, args) {
+  if (args.includes('--ajuda')) {
+    console.log('flags de unificar:');
+    for (const f of FLAGS_UNIFICAR) console.log(f);
+    for (const linha of AJUDA_PERFIL) console.log(linha);
+    return 0;
+  }
+  // O valor de --profile é o caminho, não uma flag desconhecida.
+  const sobra = args.filter((a, i) => a !== '--profile' && args[i - 1] !== '--profile');
+  const desconhecida = sobra.find((a) => !FLAGS_UNIFICAR.includes(a));
+  if (desconhecida) return sair(2, 'uso: conta.cjs unificar [--aplicar] [--profile <arquivo>] [--ajuda]');
+  const perfilArq = valorDe(args, '--profile');
+  if (args.includes('--profile') && (!perfilArq || perfilArq.startsWith('--'))) {
+    return sair(2, '--profile pede o caminho do arquivo do perfil do PowerShell');
+  }
+  const pessoal = c.pastas.pessoal;
+  if (!fs.existsSync(pessoal)) {
+    // Migração já feita (a pessoal está aposentada): --profile ainda refaz o perfil, e só ele.
+    if (perfilArq && fs.existsSync(`${pessoal}.aposentada`)) return perfilSo(perfilArq, args.includes('--aplicar'));
+    return sair(2, 'não há pasta pessoal para unificar: nada a fazer');
+  }
+  if (!args.includes('--aplicar')) return migrar(c, args, perfilArq);
+  // O --aplicar segura a trava do vigia do planejamento ao fim: o vigia não troca pasta nem renova
+  // credencial no meio da migração. Com a trava ocupada, recusa sem escrever.
+  if (!pegarTrava(c.lock)) return sair(2, 'outra rodada do vigia em curso: unificar não escreveu nada. tente de novo em instantes');
+  try {
+    return migrar(c, args, perfilArq);
+  } finally {
+    soltarTrava(c.lock);
+  }
+}
+
+// Troca o perfil e guarda o original em <arquivo>.bak-pasta-unica. Se a gravação falha, remove o .bak que ESTA
+// chamada criou (nunca um pré-existente): sem isso, a retomada indicada (o mesmo comando) sai 2 por "já existe .bak".
+function trocarPerfil(perfilArq, perfil) {
+  const bak = `${perfilArq}.bak-pasta-unica`;
+  let criou = false;
+  try {
+    fs.copyFileSync(perfilArq, bak, fs.constants.COPYFILE_EXCL);
+    criou = true;
+    // Falha simulada só em bateria (RFM_TEST=1): prova a limpeza do .bak depois de uma gravação que falha.
+    if (process.env.RFM_TEST === '1' && process.env.RFM_CONTA_FALHA === 'perfil') throw new Error('falha simulada na gravação do perfil (RFM_CONTA_FALHA)');
+    UNIFICAR.gravarPerfil(perfilArq, perfil.texto, perfil.codificacao);
+  } catch (e) {
+    if (criou) fs.rmSync(bak, { force: true });
+    e.bakRemovido = criou;
+    throw e;
+  }
+  return bak;
+}
+// Nota para a mensagem de erro: só afirma a remoção do .bak quando esta chamada o criou e o removeu.
+const notaBak = (e) => (e.bakRemovido ? ' (o .bak desta tentativa foi removido)' : '');
+
+// Só o perfil, com a pasta pessoal já aposentada. Mesmas checagens do caminho completo.
+function perfilSo(perfilArq, aplicar) {
+  if (!fs.existsSync(perfilArq)) return sair(2, `perfil não encontrado: ${perfilArq}. unificar não escreveu nada`);
+  const lido = UNIFICAR.lerPerfil(perfilArq);
+  const perfil = { ...UNIFICAR.perfilUnico(lido.texto), codificacao: lido.codificacao };
+  if (!perfil.ok) return sair(2, perfil.motivo);
+  if (!aplicar) {
+    console.log('a pasta pessoal já foi aposentada: só o perfil');
+    console.log(`perfil ${perfilArq} (sem --aplicar: nada gravado):`);
+    for (const linha of UNIFICAR.diffLinhas(lido.texto, perfil.texto)) console.log(linha);
+    return 0;
+  }
+  const bak = `${perfilArq}.bak-pasta-unica`;
+  if (fs.existsSync(bak)) return sair(2, 'já existe <arquivo>.bak-pasta-unica: apague ou mova antes. unificar não escreveu nada');
+  try {
+    trocarPerfil(perfilArq, perfil);
+  } catch (e) {
+    return sair(1, `perfil não trocado: ${msgSegura(e)}${notaBak(e)}. rode o mesmo comando de novo`);
+  }
+  console.log(`perfil: funções trocadas por claude; original em ${bak}`);
+  return 0;
+}
+
+// Mensagem de quem parou no meio: o que já foi gravado, se o vigia ficou desagendado e o comando para continuar
+// (o mesmo que o usuário rodou, com as flags que ele passou).
+function falhaDaMigracao(e, comando, plano) {
+  const feito = e.feito || [];
+  const linhas = [`migração interrompida em "${e.falhou || 'início'}": ${msgSegura(e)}`];
+  linhas.push(feito.length ? `já feito: ${feito.join('; ')}.` : 'nada foi escrito.');
+  if (feito.includes('desagendar o vigia')) linhas.push('o vigia está desagendado: nenhum agendamento roda até a migração terminar.');
+  // A credencial sai da pasta pessoal antes do rename: se o rename falha, a pasta fica sem login (o login está na reserva).
+  if (plano.tirarCredPessoal && feito.includes('credencial da pasta pessoal')) {
+    linhas.push('a pasta pessoal já ficou sem login: o login está em reserva-pessoal.json. Para usar essa pasta sem a migração, refaça o login nela (claude com CLAUDE_CONFIG_DIR e /login).');
+  }
+  linhas.push(`para continuar, rode \`${comando}\` de novo: o que já foi copiado não é copiado outra vez.`);
+  return linhas.join('\n');
+}
+
+function migrar(c, args, perfilArq) {
+  const pessoal = c.pastas.pessoal;
+  const trabalho = c.pastas.trabalho;
+  const comando = `conta.cjs unificar ${args.join(' ')}`.trimEnd();
+  const reserva = reservaArq(c, 'pessoal');
+  // O vigia aponta para o clone instalado em ~/.claude, não para este arquivo (que pode estar num worktree).
+  const scriptInstalado = path.join(trabalho, 'plugins', 'marketplaces', 'rainforest-mind', 'scripts', 'conta.cjs');
+  const plano = UNIFICAR.planejar({
+    trabalho,
+    pessoal,
+    aposentada: `${pessoal}.aposentada`,
+    claudeJsonTrabalho: claudeJsonTrabalho(),
+    reservaArq: reserva,
+    reservaExiste: fs.existsSync(reserva),
+    reservaPessoalPronta: Boolean(reservaPronta(c, 'pessoal')),
+    processosVivos: processosClaudeVivos(),
+    sessoesVivas: haSessaoViva(c),
+    // Qualquer pasta ativa fora de casa recusa: a volta do mover encontraria a saída ocupada (achado 2).
+    pastaForaDeCasa: pastasAtivas().some((P) => pastaForaDeCasa(c, P)),
+    scriptInstalado,
+    progressoArq: path.join(c.contas, 'unificar-progresso.jsonl'),
+  });
+  if (plano.recusas.length) {
+    for (const r of plano.recusas) process.stderr.write(`recusa: ${r.motivo} (${r.detalhe})\n`);
+    return sair(2, 'unificar não escreveu nada');
+  }
+  // Perfil: só com --profile, e a recusa sai antes de qualquer escrita (tudo ou nada).
+  let perfil = null;
+  let perfilLido = null;
+  if (perfilArq) {
+    if (!fs.existsSync(perfilArq)) return sair(2, `perfil não encontrado: ${perfilArq}. unificar não escreveu nada`);
+    perfilLido = UNIFICAR.lerPerfil(perfilArq);
+    perfil = { ...UNIFICAR.perfilUnico(perfilLido.texto), codificacao: perfilLido.codificacao };
+    if (!perfil.ok) return sair(2, perfil.motivo);
+    if (args.includes('--aplicar') && fs.existsSync(`${perfilArq}.bak-pasta-unica`)) {
+      return sair(2, 'já existe <arquivo>.bak-pasta-unica: apague ou mova antes. unificar não escreveu nada');
+    }
+  }
+  if (!args.includes('--aplicar')) {
+    for (const linha of UNIFICAR.relatorio(plano)) console.log(linha);
+    if (perfil) {
+      console.log(`perfil ${perfilArq} (sem --aplicar: nada gravado):`);
+      for (const linha of UNIFICAR.diffLinhas(perfilLido.texto, perfil.texto)) console.log(linha);
+    } else {
+      console.log('perfil do PowerShell: não tratado (passe --profile <arquivo> para trocar as funções)');
+    }
+    return 0;
+  }
+  // Antes de qualquer escrita: o vigia está agendado? Exit 0 = existe; qualquer outro código = não agendado
+  // (medido em 2026-10-12: tarefa inexistente sai 1). Falha de execução do schtasks recusa sem escrever.
+  const consulta = chamarSchtasks(['/Query', '/TN', TAREFA]);
+  if (consulta.error || consulta.status === null) return sair(1, 'não consegui consultar o vigia (schtasks /Query). unificar não escreveu nada');
+  plano.vigiaAgendado = consulta.status === 0;
+  // Marca de rodada anterior: apagou a tarefa e parou antes do reagendamento. Então /Query 1 não quer dizer
+  // "nunca esteve agendado": a tarefa a reagendar é esta.
+  plano.reagendar = plano.vigiaAgendado || fs.existsSync(marcaVigioArq(c));
+  // Conta pessoal sem registro (rodada 6, achado 1): o modo uma pasta não tem como registrá-la depois, porque a
+  // pasta pessoal some nesta migração. O registro vai no aplicar (etapa depois do vigia desagendado), do oauthAccount
+  // do próprio .claude.json da pessoal: sem API, porque a bateria não tem servidor falso e a regra proíbe rede. A
+  // primeira troca confere a identidade pela API e desfaz se divergir. Sem oauthAccount, recusa ANTES de escrever.
+  const estado = lerEstado(c);
+  if (!(estado.contas.pessoal || {}).email) {
+    const oauth = (lerJson(claudeArq(c, 'pessoal'), null) || {}).oauthAccount;
+    if (!oauth || !oauth.emailAddress) {
+      return sair(2, 'conta pessoal sem registro e sem oauthAccount na pasta pessoal: rode status com a pasta pessoal em casa (registra a conta pela API) e depois unificar de novo. unificar não escreveu nada');
+    }
+    plano.registroPessoal = { email: oauth.emailAddress, oauthAccount: oauth };
+  }
+  let aplicado;
+  try {
+    aplicado = UNIFICAR.aplicar(plano, {
+      desagendar: () => {
+        // Marca antes do /Delete: se o processo cair depois dele, a próxima rodada sabe que falta reagendar.
+        gravarMarcaVigio(c);
+        const r = chamarSchtasks(['/Delete', '/TN', TAREFA, '/F']);
+        const st = r.error || r.status === null ? 1 : r.status;
+        if (st) fs.rmSync(marcaVigioArq(c), { force: true });
+        return st;
+      },
+      registrarPessoal: (reg) => {
+        const atual = lerEstado(c);
+        atual.contas.pessoal = reg;
+        gravarEstado(c, atual);
+      },
+      instalarPlugin: (chave) => chamarClaude(['plugin', 'install', chave, '--scope', 'user']),
+      // Falha simulada do rename só em bateria (RFM_TEST=1): prova o caminho de recuperação do achado 3.
+      renomearPasta: (de, para) => {
+        if (process.env.RFM_TEST === '1' && process.env.RFM_CONTA_FALHA === 'renomear') {
+          throw new Error('falha simulada no rename da pasta (RFM_CONTA_FALHA)');
+        }
+        fs.renameSync(de, para);
+      },
+      reagendar: () => {
+        const r = chamarSchtasks(montarAgendamento(scriptInstalado));
+        const st = r.error || r.status === null ? 1 : r.status;
+        if (st === 0) fs.rmSync(marcaVigioArq(c), { force: true });
+        return st;
+      },
+    });
+  } catch (e) {
+    return sair(1, falhaDaMigracao(e, comando, plano));
+  }
+  for (const linha of UNIFICAR.relatorio(plano, aplicado)) console.log(linha);
+  if (!perfil) console.log('perfil do PowerShell: não tocado (passe --profile <arquivo> para trocar)');
+  // Sem --profile o perfil não foi tocado; com ele, a falha diz o comando que refaz a troca do perfil.
+  const aviso = perfil ? `; o perfil não foi trocado: rode \`${comando}\` para trocá-lo` : '';
+  if (aplicado.reagendado) {
+    return sair(1, `migração feita, mas o vigia não foi reagendado: rode agendar do clone instalado${aviso}`);
+  }
+  const falhos = aplicado.plugins.filter((p) => p.status !== 0);
+  if (falhos.length) {
+    const comandos = falhos.map((p) => `claude plugin install ${p.chave} --scope user`);
+    return sair(1, `migração feita, mas plugin não instalou. rode: ${comandos.join(' e ')}${aviso}`);
+  }
+  // Último passo: o perfil só muda depois da migração inteira. Backup por COPYFILE_EXCL (nunca sobrescreve).
+  if (perfil) {
+    let bak;
+    try {
+      bak = trocarPerfil(perfilArq, perfil);
+    } catch (e) {
+      return sair(1, `migração feita, mas o perfil não foi trocado: ${e.message}${notaBak(e)}; rode \`${comando}\` para trocá-lo`);
+    }
+    console.log(`perfil: funções trocadas por claude; original em ${bak}`);
+  }
+  return 0;
+}
+
 function eventos(c, args) {
   const bruto = valorDe(args, '--desde');
   const desde = Number(bruto);
@@ -1011,6 +1323,13 @@ function eventos(c, args) {
 
 async function main(argv) {
   const [cmd = 'status', ...resto] = argv;
+  // Bateria com qualquer pasta sobrescrita (RFM_CONTA_PASTA_*) e sem RFM_CONTA_CLAUDE_JSON cairia no ~/.claude.json
+  // de quem roda: recusa antes de ler ou gravar qualquer .claude.json (rodada 5, achado 1; rodada 6, achado 5:
+  // o teste era só RFM_CONTA_PASTA_TRABALHO, e só RFM_CONTA_PASTA_PESSOAL passava).
+  const pastaSobrescrita = Object.keys(process.env).some((k) => k.startsWith('RFM_CONTA_PASTA_'));
+  if (process.env.RFM_TEST === '1' && pastaSobrescrita && !process.env.RFM_CONTA_CLAUDE_JSON) {
+    return sair(2, 'recusa: bateria sem RFM_CONTA_CLAUDE_JSON (o .claude.json da pasta de trabalho cairia no home de quem roda)');
+  }
   const c = ctx();
   if (cmd === 'status') return status(c);
   if (cmd === 'trocar') return trocar(c, resto);
@@ -1021,7 +1340,8 @@ async function main(argv) {
   if (cmd === 'preparar') return preparar(c, resto);
   if (cmd === 'agendar') return agendar(c, resto);
   if (cmd === 'desagendar') return desagendar();
-  return sair(2, 'uso: conta.cjs [status | pessoal|trabalho [--pasta trabalho|pessoal] | trocar <pessoal|trabalho> [--pasta trabalho|pessoal] | vigiar | eventos --desde <ms> | preparar <pessoal|trabalho> | agendar [--imprimir] | desagendar]');
+  if (cmd === 'unificar') return unificar(c, resto);
+  return sair(2, 'uso: conta.cjs [status | pessoal|trabalho [--pasta trabalho|pessoal] | trocar <pessoal|trabalho> [--pasta trabalho|pessoal] | vigiar | eventos --desde <ms> | preparar <pessoal|trabalho> | agendar [--imprimir] | desagendar | unificar [--aplicar]]');
 }
 
 // A bateria da trava (scripts/testa-conta.sh) carrega este arquivo para exercitar pegarTrava em
