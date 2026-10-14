@@ -1,11 +1,25 @@
 # Reprovado: o laço
 
+<!-- indice -->
+**Índice** — arquivo longo: quem parou no meio não leu o laço inteiro. Seções na ordem; cada item é o começo da seção, sem a marcação:
+
+- Cada volta
+- Teto
+- O que o laço não protege
+- Flaky
+- Teto de despachos
+<!-- /indice -->
+
 Design: `docs/rainforest/design/2026-10-10-laco-executor-revisor.md`
 (enxerto do `execute` do plugin `wildz-data`, de Rafael Siqueira).
 
 Revisor que reprova devolve o trabalho ao executor **sem esperar o usuário e
 sem a mão da janela na crítica**. A janela principal gira o laço até o
 revisor dar `ok`, até o teto, ou até um achado de design (D1).
+
+Com a chave `executar-autonomo` ligada, cada parada daqui (achado `[design]`, teto, `flaky`, teto de
+despachos) avisa por `PushNotification`, e fora delas o fluxo segue até o merge sem perguntar:
+`skills/executar/references/modo-autonomo.md`.
 
 ## Cada volta
 
