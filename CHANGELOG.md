@@ -10,6 +10,40 @@ que existe delas é o commit de release (`git log --grep="^Versao "`), e reescre
 29 releases de memória produziria nota bonita e errada. Versão nova daqui em diante
 entra aqui no mesmo commit que sobe o `version` do `plugin.json`.
 
+## 1.67.10 — 2026-10-16
+
+- **Gate de worktree: mais grafias de escrita no checkout principal passam a ser barradas (#530, #533).** O gate
+  reconhece a escrita por uma lista de formas conhecidas; o que ela não cobre segue passando e está na #552.
+  - `{cd,X}` e `{pushd,X}` no começo do comando (Bash), também depois de atribuição, palavra reservada ou `!`, e com
+    elemento citado (`{cd,"a b"}`): o bash expande as chaves e roda `cd X`, e o gate passa a ler assim. No
+    PowerShell, `{...}` segue sendo bloco de script.
+  - Cmdlets de escrita do PowerShell: `Set-Content`/`sc`, `Add-Content`/`ac`, `Out-File`, `New-Item`/`ni`,
+    `Tee-Object`/`tee`, `Copy-Item`/`copy`/`cpi`/`cp` e `Move-Item`/`move`/`mi`/`mv`. Valem com qualificador de
+    módulo, crase no nome, `&`, `.` ou atribuição antes (`$a=`, `$a +=`, `[string]$a =`, `$a, $b =`), parâmetro com
+    `:` ou travessão, aliases de parâmetro (`-PSPath`, `-LP`) e lista de caminhos, com ou sem espaço (`a, <P>/f`).
+    `New-Item <P> -Name f` junta caminho e nome. Na cópia sem destino, o alvo é o cwd. No `Move-Item`, a origem
+    também é alvo, porque sai do lugar.
+  - Incerto, e por isso barrado dentro de repositório, mesmo no worktree: alvo com variável, crase ou aspa
+    tipográfica, splat (`@a`), parâmetro desconhecido e comentário de bloco (`<#...#>`) fora de aspas.
+  - `iex`/`Invoke-Expression` com texto literal: o texto é analisado como comando. Com `$`, crase, outro parâmetro
+    além de `-Command`, ou sem argumento (texto pelo pipeline), é incerto.
+  - Chamada .NET sob `IO` (`[IO.File]::WriteAllText(...)`, `[IO.Directory]::CreateDirectory(...)`,
+    `[IO.StreamWriter]::new(...)`): só os métodos de leitura conhecidos passam. Em `Move` e `Replace`, origem e
+    backup também são alvo. Chamada dentro de aspas simples, ou de aspas duplas sem `$`, é texto e não conta. A
+    máscara não vale com crase fora de aspas, `#`, here-string, aspa tipográfica ou `iex`.
+  - Escrita na mesma linha de um verbo git (`echo x > <principal>/f && git commit`) também é checada.
+  - Uso legítimo no worktree continua passando: `Copy-Item <principal>/a.txt .`, `Set-Content a.txt $t` (o `-Value`
+    não é caminho), `Set-Content a.txt @('x','y')`, `New-Item -Type Directory sub` e `cp -r src dst`.
+  - Seguem passando, fora do escopo deste conserto:
+    - `cd $X` com variável seguido de escrita (alvo no cwd inicial) e PowerShell chamado do Bash (`pwsh -c "..."`).
+    - Registrados na #552: remoção (`rm`, `Remove-Item`, a origem do `mv` do bash), `New-Object` de tipo de IO,
+      redirecionamento com variável (`echo x > $P/f`), alvo entre parênteses (`-Path (Join-Path ...)`,
+      `('a','<P>/f')`), pipeline sem posicional, caminho com provedor (`FileSystem::`) e outros cmdlets de escrita
+      (`Clear-Content`, `Rename-Item`, `Export-Csv`...).
+    - Também na #552: indireção .NET e texto executado fora do `iex` (`[scriptblock]::Create`, `Invoke-Command`), e
+      chaves em outro comando (`{touch,<P>/f}`). E ainda `builtin`/`command`/`time`/`eval` antes das chaves,
+      redirecionamento antes do `cd`, e aspa escapada por crase na segmentação do PowerShell.
+
 ## 1.67.9 — 2026-10-15
 
 - **Estado do fluxo: um escritor não apaga mais o que o outro gravou (#545).** O `veredito` do revisor, o
