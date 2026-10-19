@@ -68,7 +68,7 @@ const { cwdPorSegmento, resolverMovedor, toplevelConfinado, extrairUltimoDirGit,
 const CLIS_QUE_ESCREVEM = require(path.join(__dirname, "lib", "clis-que-escrevem.cjs"));
 // #530 (D4, D6): a palavra de comando como o bash a le, e o corpo de cada
 // substituicao de comando (crase e `$(...)`), para o gate conferir o que roda la dentro.
-const { normalizarComando, corposDeSubstituicao } = require(path.join(__dirname, "lib", "palavra-bash.cjs"));
+const { normalizarComando, corposDeSubstituicao, expandirChaves } = require(path.join(__dirname, "lib", "palavra-bash.cjs"));
 const {
   tokensComAspas, ehComando, WRAPPERS_QUE_REPASSAM, posicaoDeComando, textoAPartir, desempacotarWrapperDeString,
 } = require(path.join(__dirname, "lib", "tokens-comando.cjs"));
@@ -381,9 +381,34 @@ function estadoDoRepo(dir) {
   };
 }
 
+// Windows: nome curto 8.3 (`RUNNER~1`) vira o longo, pelo ancestral mais fundo que existe.
+// O git devolve o nome longo; comparar por texto com o curto tirava o cwd do worktree e
+// deixava citar o principal pelo nome curto (#552). So caminho com `~` paga o realpath.
+const LONGO = new Map();
+function semNomeCurto(s) {
+  if (process.platform !== "win32" || !s.includes("~")) return s;
+  if (LONGO.has(s)) return LONGO.get(s);
+  let base = s, resto = "";
+  while (!fs.existsSync(base) && path.dirname(base) !== base) {
+    resto = "/" + path.basename(base) + resto;
+    base = path.dirname(base);
+  }
+  const real = (p) => fs.realpathSync.native(p).replace(/\\/g, "/").replace(/\/+$/, "");
+  let longo = s;
+  try {
+    // Link no FIM do caminho: so o pai se resolve. Seguir o link trocaria a entrada, que mora
+    // no principal, pelo alvo (`rm <P>/link` deixava de barrar). Com caminho depois do link
+    // (`<W>/link/novo/f`), a operacao atravessa o link e ele se resolve.
+    const ehLink = resto === "" && fs.lstatSync(base).isSymbolicLink();
+    longo = (ehLink ? real(path.dirname(base)) + "/" + path.basename(base) : real(base)) + resto;
+  } catch {}
+  LONGO.set(s, longo);
+  return longo;
+}
+
 // Raiz temporaria do sistema, normalizada uma vez. O scratchpad da sessao mora
 // abaixo dela, em `<temp>/claude/<projeto>/<sessao>/scratchpad`.
-const TEMP_DO_SISTEMA = path.resolve(os.tmpdir()).replace(/\\/g, "/").toLowerCase();
+const TEMP_DO_SISTEMA = semNomeCurto(path.resolve(os.tmpdir()).replace(/\\/g, "/")).toLowerCase();
 
 /**
  * O alvo esta dentro do scratchpad da sessao?
@@ -393,17 +418,23 @@ const TEMP_DO_SISTEMA = path.resolve(os.tmpdir()).replace(/\\/g, "/").toLowerCas
  * em temp — inclusive a caixa de areia desta bateria.
  */
 function ehScratchpad(alvo) {
-  const n = path.resolve(alvo).replace(/\\/g, "/").toLowerCase();
+  const n = semNomeCurto(path.resolve(alvo).replace(/\\/g, "/")).toLowerCase();
   if (n !== TEMP_DO_SISTEMA && !n.startsWith(TEMP_DO_SISTEMA + "/")) return false;
   return n.split("/").includes("scratchpad");
 }
 
+/**
+ * Diretorio de onde o repositorio do alvo e lido: o proprio alvo se for diretorio,
+ * senao o primeiro ancestral que existe (#552, D6). Subir um nivel so deixava passar
+ * `New-Item <P>/n1/n2/f -Force`: `<P>/n1/n2` nao existe, o git nao achava repositorio.
+ */
 function dirDe(alvo) {
   try {
-    return fs.existsSync(alvo) && fs.statSync(alvo).isDirectory() ? alvo : path.dirname(alvo);
-  } catch {
-    return path.dirname(alvo);
-  }
+    if (fs.existsSync(alvo) && fs.statSync(alvo).isDirectory()) return alvo;
+  } catch {}
+  let atual = path.dirname(alvo);
+  while (!fs.existsSync(atual) && path.dirname(atual) !== atual) atual = path.dirname(atual);
+  return atual;
 }
 
 function bloqueia(motivo, toplevel, agente, apenasRestauracao = null, ehWorktreeAlvo = false) {
@@ -1409,6 +1440,368 @@ function gateDeSessaoColocada(ev, cwd) {
   }
 }
 
+// ------------------------------------------------------------------------------
+// Rede de caminho do principal (#552). Segunda camada, por cima da lista de formas
+// de escrita: a partir de um worktree linkado, todo comando que cite um caminho do
+// checkout principal (fora dos worktrees e do scratchpad) e barrado, salvo o
+// segmento de leitura conhecida (D2). A lista nao converge: cada revisao do
+// #530/#533 achou grafias novas; a rede so precisa ver o caminho.
+
+// Comandos de leitura (D2). Movedor (`cd`, `Set-Location`) tambem: ele nao escreve,
+// e o segmento seguinte, ja com cwd no principal, cai na rede pelo cwd.
+const LEITURA_DA_REDE = new Set([
+  "cat", "head", "tail", "less", "more", "ls", "dir", "stat", "file", "wc", "grep", "egrep", "fgrep",
+  "rg", "find", "diff", "realpath", "readlink", "basename", "dirname", "test", "[", "echo", "printf",
+  // `Join-Path`/`Split-Path`/`Resolve-Path` nao: montam o caminho que outro comando usa
+  // (`Set-Content -Path (Join-Path <P> f)`).
+  "get-content", "gc", "type", "get-childitem", "gci", "get-item", "gi", "test-path",
+  "select-string", "sls", "get-filehash", "measure-object", "measure", "write-output", "write-host",
+  // Filtros de pipeline que nao escrevem (`ForEach-Object`, `awk`, `sed`, `xargs` ficam de fora: podem).
+  "select-object", "select", "where-object", "where", "?", "sort-object", "group-object",
+  "format-table", "ft", "format-list", "fl", "out-string", "out-host", "convertto-json", "convertfrom-json",
+  "sort", "uniq", "cut", "tr", "jq", "column", "nl", "tac", "rev",
+  "cd", "pushd", "popd", "chdir", "set-location", "sl", "push-location", "pop-location",
+]);
+const GIT_DE_LEITURA = new Set(["log", "show", "diff", "status", "rev-parse", "ls-files", "blame", "grep", "cat-file"]);
+// Opcoes cujo valor e texto de mensagem em `git`/`gh` (D4).
+const OPCOES_DE_TEXTO = new Set(["-m", "--message", "--body", "--title", "-t"]);
+// Caminho absoluto no texto: `C:\...`, `C:/...`, e no Bash a forma MSYS `/c/...`.
+const CAMINHO_WINDOWS = /[A-Za-z]:[\\/][^\s'"`;|&<>(){},]*/g;
+const CAMINHO_MSYS = /(?:^|(?<=[\s'"=:({,]))\/[A-Za-z]\/[^\s'"`;|&<>(){},]*/g;
+// Componente `..` (D5): o token inteiro que o contem.
+const CAMINHO_RELATIVO_ACIMA = /(?:^|(?<=[\s'"=:({,]))(?:[^\s'"`;|&<>(){},]*[\\/])?\.\.(?:[\\/][^\s'"`;|&<>(){},]*)?(?=$|[\s'"`;|&<>(){},])/g;
+
+/** Caminho comparavel: barras normais, MSYS `/c/` vira `c:/`, sem barra final, minusculo no Windows. */
+function normalizaCaminho(p, base) {
+  let s = p.replace(/\\/g, "/");
+  const msys = /^\/([A-Za-z])(\/.*|$)/.exec(s);
+  if (msys) s = `${msys[1]}:${msys[2] || "/"}`;
+  s = semNomeCurto(path.resolve(base, s).replace(/\\/g, "/").replace(/\/+$/, ""));
+  return process.platform === "win32" ? s.toLowerCase() : s;
+}
+const dentroDe = (a, b) => a === b || a.startsWith(b + "/");
+
+/** `{principal, worktrees}` normalizados quando o cwd esta num worktree linkado; senao null. */
+function principalDoWorktree(cwd) {
+  const saida = git(cwd, ["worktree", "list", "--porcelain"]);
+  if (!saida) return null;
+  const caminhos = saida.split(/\r?\n/).filter((l) => l.startsWith("worktree ")).map((l) => normalizaCaminho(l.slice(9), cwd));
+  if (caminhos.length < 2) return null;
+  const [principal, ...worktrees] = caminhos;
+  const aqui = normalizaCaminho(cwd, cwd);
+  if (!worktrees.some((w) => dentroDe(aqui, w))) return null;
+  return { principal, worktrees };
+}
+
+/**
+ * Segmentos da rede: corta so em `;`, `|`, `&` e quebra de linha fora de aspas. Ao
+ * contrario de `segmentosComAspas`, parenteses e chaves ficam no segmento: o que esta
+ * entre eles alimenta o comando de fora (`Set-Content -Path (Join-Path <P> f)`).
+ */
+function segmentosDaRede(texto, ehPowerShell) {
+  const segs = [];
+  let atual = "";
+  let aspa = null;
+  for (let i = 0; i < texto.length; i += 1) {
+    const c = texto[i];
+    if (aspa) {
+      atual += c;
+      if (c === "`" && ehPowerShell && aspa === '"' && i + 1 < texto.length) { atual += texto[i + 1]; i += 1; }
+      else if (c === "\\" && !ehPowerShell && aspa === '"' && i + 1 < texto.length) { atual += texto[i + 1]; i += 1; }
+      else if (c === aspa) aspa = null;
+      continue;
+    }
+    if (c === "'" || c === '"') { aspa = c; atual += c; continue; }
+    if (c === ";" || c === "|" || c === "&" || c === "\n" || c === "\r") {
+      // `2>&1`, `>&2`, `&>`: e redirecionamento, nao separador.
+      if (c === "&" && (/[<>]$/.test(atual) || texto[i + 1] === ">")) { atual += c; continue; }
+      if (atual.trim()) segs.push(atual);
+      atual = "";
+      continue;
+    }
+    atual += c;
+  }
+  if (atual.trim()) segs.push(atual);
+  return segs;
+}
+
+/** O texto entre parenteses e chaves fora de aspas, concatenado. */
+function trechosAninhados(seg) {
+  let saida = "";
+  let prof = 0;
+  let aspa = null;
+  for (const c of seg) {
+    if (aspa) { if (prof > 0) saida += c; if (c === aspa) aspa = null; continue; }
+    if (c === "'" || c === '"') { aspa = c; if (prof > 0) saida += c; continue; }
+    if (c === "(" || c === "{") { prof += 1; saida += " "; continue; }
+    if ((c === ")" || c === "}") && prof > 0) { prof -= 1; saida += " "; continue; }
+    if (prof > 0) saida += c;
+  }
+  return saida;
+}
+
+// Copia: a origem e leitura, o destino fica com a lista (`Copy-Item <P>/a .` e legitimo).
+const COPIA_DA_REDE = new Set(["copy-item", "copy", "cpi", "cp"]);
+// Chamada .NET de leitura, inteira no segmento: `[IO.File]::ReadAllText('<P>/f')`.
+const CHAMADA_NET_NO_INICIO = /^\s*\[\s*[\w.]*\bIO\.[\w.]+\s*\]\s*::\s*(\w+)\s*\(/i;
+
+/** O segmento roda um comando de leitura conhecida (D2)? */
+function segmentoDeLeitura(toks, seg, ehPowerShell, configGitNaLinha) {
+  if (ehPowerShell) {
+    const net = CHAMADA_NET_NO_INICIO.exec(seg);
+    if (net) {
+      if (!METODOS_NET_DE_LEITURA.has(net[1].toLowerCase())) return false;
+      const { args, fechou } = argumentosDaChamada(seg, net[0].length);
+      return fechou && args.every((a) => literalDoArgumento(a) !== null) ? "net" : false;
+    }
+  }
+  const pos = posicaoDeComando(toks);
+  // So atribuicao (`P=<P>`): o caminho vai para uma variavel que o resto da linha usa
+  // (`echo x > $P/f`). Nao e leitura: o caminho citado conta.
+  if (pos === null || pos === undefined) return false;
+  // PowerShell: string citada na posicao de comando e expressao, nao roda nada (rodar pede `&`).
+  // So vale quando o segmento ABRE com a aspa: atribuicao colada (`$p='<P>'`, `[string]$p='<P>'`,
+  // `$p,$q='<P>'`) tambem vira um token citado, e ali o caminho vai para a variavel que o
+  // resto da linha usa, e conta.
+  if (ehPowerShell && toks[pos].q) return pos === 0 && /^\s*['"]/.test(seg);
+  const nome = toks[pos].v.replace(/`/g, "").split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, "");
+  if (COPIA_DA_REDE.has(nome) && (ehPowerShell || nome === "cp")) {
+    // `cp -t <P> a` poe o destino numa opcao: a lista nao o ve, entao nao e leitura.
+    return !toks.some((t) => /^(-t|--target-directory)(=|$)/.test(t.v));
+  }
+  // Leitura que escreve por opcao (revisao de seguranca): `git log --output=f`,
+  // `sort -o f`, `uniq a f`, `rg --pre cmd`, `find -fls f`.
+  // Token citado tambem conta: o shell tira as aspas antes de o programa ler a opcao
+  // (`find <P> "-delete"`).
+  const tem = (re) => toks.some((t) => re.test(t.v));
+  // Atribuicao antes do comando (`GIT_EXTERNAL_DIFF='rm <P>/f' git diff`) pode mudar o que
+  // ele roda: nao e leitura.
+  if (toks.slice(0, pos).some((t) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(t.v))) return false;
+  if (nome === "git") {
+    // Config do git mexida na mesma linha (`export GIT_EXTERNAL_DIFF=...; git diff`,
+    // `git config diff.external ...`): o git "de leitura" pode rodar comando.
+    if (configGitNaLinha) return false;
+    const subs = subcomandoGit(seg, ehPowerShell ? "PowerShell" : "Bash");
+    // `-O` com valor colado, abreviacao de opcao longa (`--outp=f`, `--ext`, `--textc`), e o que
+    // faz o git rodar comando da config (`-c diff.external=...`, `--ext-diff`, `--textconv`, `--exec-path`).
+    return subs.length > 0 && subs.every((s) => !s.incerto && GIT_DE_LEITURA.has(s.verbo))
+      && !tem(/^-O|^--ou(t(p(u(t)?)?)?)?(=|$)|^--op(e(n[-a-z]*)?)?(=|$)/)
+      && !tem(/^-c|^--config-env|^--ext|^--textc|^--exec-path/);
+  }
+  if (nome === "find") return !tem(/^-(delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/);
+  // `-o` em grupo de opcoes curtas (`-ro f`), abreviacao de `--output` e o compressor
+  // (`--co...`, abreviacao de `--compress-program`), que e comando.
+  if (nome === "sort") return !tem(/^-[^-]*o|^--o(u(t(p(u(t)?)?)?)?)?(=|$)|^--co/);
+  if (nome === "rg") return !tem(/^--pre(-glob)?(=|$)/);
+  if (nome === "uniq") return toks.slice(pos + 1).filter((t) => !/^-/.test(t.v)).length <= 1;
+  return LEITURA_DA_REDE.has(nome);
+}
+
+/**
+ * Destinos de redirecionamento lidos do texto cru, fora de aspas (revisao de seguranca):
+ * `>`, `>>`, `>|`, `<>`, `&>`, `n>`, `*>` e destino entre aspas. Duplicacao de
+ * descritor (`2>&1`, `>&-`) nao e destino.
+ */
+function destinosDeRedirecionamento(seg, ehPowerShell) {
+  // Escape: contrabarra no Bash, crase no PowerShell (os dois valem fora de aspa simples).
+  const esc = ehPowerShell ? "`" : "\\";
+  const destinos = [];
+  let aspa = null;
+  for (let i = 0; i < seg.length; i += 1) {
+    const c = seg[i];
+    if (c === esc && aspa !== "'") { i += 1; continue; }
+    if (aspa) { if (c === aspa) aspa = null; continue; }
+    if (c === "'" || c === '"') { aspa = c; continue; }
+    if (c !== ">") continue;
+    let j = i + 1;
+    while (j < seg.length && (seg[j] === ">" || seg[j] === "|")) j += 1;
+    if (seg[j] === "&" && /[0-9-]/.test(seg[j + 1] || "")) { i = j; continue; }
+    if (seg[j] === "&") j += 1;
+    while (j < seg.length && /\s/.test(seg[j])) j += 1;
+    // A palavra inteira: trechos citados e nao citados colados ("<P>"/f) viram um so.
+    let alvo = "", cru = "", q = null;
+    for (; j < seg.length; j += 1) {
+      const d = seg[j];
+      if (!q && /[\s;|&<>]/.test(d)) break;
+      cru += d;
+      if (d === esc && q !== "'") { j += 1; if (j < seg.length) { alvo += seg[j]; cru += seg[j]; } continue; }
+      if (q) { if (d === q) q = null; else alvo += d; continue; }
+      if (d === "'" || d === '"') { q = d; continue; }
+      alvo += d;
+    }
+    // Aspa sem fechar: o resto do segmento e o destino (falha fechado).
+    if (q) alvo = cru = seg.slice(i + 1);
+    if (alvo) destinos.push(alvo);
+    if (cru && cru !== alvo) destinos.push(cru);
+    i = j;
+  }
+  // Aspa sem fechar: o texto citado pode esconder um redirecionamento (falha fechado).
+  if (aspa && seg.includes(">")) destinos.push(seg.slice(seg.indexOf(">") + 1));
+  return destinos;
+}
+
+/** Tokens do segmento sem o valor das opcoes de mensagem de `git`/`gh` (D4). */
+function semTextoDeMensagem(toks) {
+  const pos = posicaoDeComando(toks);
+  const nome = pos === null || pos === undefined ? "" : toks[pos].v.split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, "");
+  if (nome !== "git" && nome !== "gh") return toks;
+  const saida = [];
+  for (let i = 0; i < toks.length; i += 1) {
+    const t = toks[i];
+    if (!t.q && OPCOES_DE_TEXTO.has(t.v)) { i += 1; continue; }
+    // Valor colado so na opcao longa (`--message="..."`, o token fica citado). `-m"..."` colado
+    // nao sai: em grupo de opcoes curtas (`git rebase -mx"rm <P>/f"`) o resto e outra opcao.
+    if (/^--(message|body|title)=/.test(t.v)) continue;
+    saida.push(t);
+  }
+  return saida;
+}
+
+// Caminho absoluto POSIX (`/srv/repo/...`), fora do Windows.
+const CAMINHO_POSIX = /(?:^|(?<=[\s'"=:({,]))\/[^\s'"`;|&<>(){},]*/g;
+// Pasta do usuario por atalho (revisao de seguranca): til, a variavel HOME e as de
+// perfil do PowerShell e do cmd.
+const ATALHO_DE_HOME = /(^|[\s'"=:(,])~(?=[\\/]|$|[\s'"])|\$\{HOME\}|\$HOME\b|\$\{?HOMEDRIVE\}?\$\{?HOMEPATH\}?|\$\{USERPROFILE\}|\$USERPROFILE\b|\$\{?env:HOMEDRIVE\}?\$\{?env:HOMEPATH\}?|%HOMEDRIVE%%HOMEPATH%|\$\{env:(?:USERPROFILE|HOME)\}|\$env:(?:USERPROFILE|HOME)\b|%USERPROFILE%/gi;
+
+/** Caminhos citados num texto: absolutos (Windows, MSYS no Bash, POSIX fora do Windows), com `..` e por atalho de home. */
+function caminhosCitados(texto, ehPowerShell) {
+  const casa = os.homedir().replace(/\\/g, "/");
+  // Replacer por funcao: `$` no texto novo seria padrao de substituicao.
+  const t = texto.replace(ATALHO_DE_HOME, (m, antes) => (antes !== undefined ? antes + casa : casa));
+  const achados = [...(t.match(CAMINHO_WINDOWS) || []), ...(t.match(CAMINHO_RELATIVO_ACIMA) || [])];
+  if (process.platform !== "win32") achados.push(...(t.match(CAMINHO_POSIX) || []));
+  else if (!ehPowerShell) achados.push(...(t.match(CAMINHO_MSYS) || []));
+  return achados.map((c) => c.replace(/^FileSystem::/i, ""));
+}
+
+/**
+ * Alvos da rede (D1-D5): um `{dir: <principal>, incerto: true}` por segmento que cita
+ * caminho do principal fora de leitura, ou que roda com cwd no principal. Vazio
+ * quando o cwd nao e um worktree linkado.
+ */
+function alvosDaRede(comando, cwd, ehPowerShell) {
+  const repo = principalDoWorktree(cwd);
+  if (!repo) return [];
+  // Isencao dos worktrees por PALAVRA de shell (revisao de seguranca): o caminho do worktree
+  // citado numa palavra pode subir para o principal sem o literal `..` que a leitura por token ve.
+  // A palavra respeita aspas e escape (`<W>/'a b'/...` e uma so). Perde a isencao quando tem
+  // variavel, substituicao ou crase (`<W>/$D/f`); quando, sem aspas e escapes, cai no principal
+  // fora dos worktrees (`"<W>"/../../f`, `<W>/.\./f`); ou, no Bash, quando tem chave que monta `..`
+  // (`{<W>,y}/../f`, `<W>/.{.,}/f`, `{x,.}.`, `.{,}.`). `{1..3}`, `{a,b}.txt`, `f.{js,ts}`, `{cd,<W>}` seguem
+  // isentos, e expansao em outra palavra da linha nao importa.
+  const casa = os.homedir().replace(/\\/g, "/");
+  const comCasa = (t) => t.replace(ATALHO_DE_HOME, (m, antes) => (antes !== undefined ? antes + casa : casa));
+  const esc = ehPowerShell ? "`" : "\\";
+  // Palavras do texto, com a fronteira so fora de aspas e de escape; cada uma com o texto cru
+  // e o texto sem aspas nem escapes.
+  const palavrasDe = (texto) => {
+    const saida = [];
+    let cru = "", limpo = "", aspa = null;
+    const fecha = () => { if (cru) saida.push({ cru, limpo }); cru = ""; limpo = ""; };
+    for (let i = 0; i < texto.length; i += 1) {
+      const c = texto[i];
+      if (c === esc && aspa !== "'" && i + 1 < texto.length) { cru += c + texto[i + 1]; if (texto[i + 1] !== "\n") limpo += texto[i + 1]; i += 1; continue; }
+      if (aspa) { cru += c; if (c === aspa) aspa = null; else limpo += c; continue; }
+      if (c === "'" || c === '"') { aspa = c; cru += c; continue; }
+      if (/[\s;|&<>()]/.test(c)) { fecha(); continue; }
+      cru += c; limpo += c;
+    }
+    fecha();
+    return saida;
+  };
+  const sobeNaChave = (p0) => {
+    const p = p0.replace(/\{-?\w+\.\.-?\w+(\.\.-?\d+)?\}/g, "{}");
+    if (!/[{}]/.test(p)) return false;
+    if (/\.\.|[{,]\.|\.[},]/.test(p)) return true;
+    // Ponto antes e depois do MESMO grupo com alternativa vazia (`.{,}.`, `.{x,}.`, `.{{,},}.`).
+    for (const m of p.matchAll(/\.\{((?:[^{}]|\{[^{}]*\})*)\}\./g)) if (/^,|,$|,,|\{,|,\}|\{\}/.test(m[1])) return true;
+    return false;
+  };
+  // Atalho de home por shell. Bash: so `$HOME`, `${HOME}`, `$USERPROFILE`, `${USERPROFILE}`, com caixa exata e
+  // chave fechada (`${HOME/x/y}` e substituicao, `$home` e outra variavel). PowerShell: `$env:`,
+  // `${env:}`, `%USERPROFILE%` e `$HOME` em qualquer caixa.
+  const CASA = ehPowerShell
+    ? /(\$\{env:(?:USERPROFILE|HOME)\}|\$env:(?:USERPROFILE|HOME)\b|\$HOME\b|%USERPROFILE%)/i
+    : /(\$\{HOME\}|\$HOME\b|\$\{USERPROFILE\}|\$USERPROFILE\b)/;
+  const CASA_NO_INICIO = new RegExp("^(['\"]?)" + CASA.source + "(?=[\\\\/])", CASA.flags);
+  const foraDosWorktrees = (n) => dentroDe(n, repo.principal) && !repo.worktrees.some((w) => dentroDe(n, w)) && !ehScratchpad(n);
+  // `p.cru` e o texto ORIGINAL da palavra (o `$` de `$HOME` conta); `p.limpo` vem do texto com o
+  // atalho de home expandido, so para achar e resolver o caminho `c`.
+  // O atalho de home no INICIO da palavra (`$HOME/...`, `${env:USERPROFILE}\...`) nao conta como
+  // expansao: o valor e o da casa. HOME redefinido na propria linha fica fora de escopo (variavel
+  // sem o literal do caminho, D3). No meio (`<W>/$HOME/f`) conta.
+  const palavraQueSobe = (p, base, c) => {
+    if (/[$`]/.test(p.cru.replace(CASA_NO_INICIO, (m, aspa) => aspa))) return true;
+    // Com chave (Bash), cada alternativa da expansao conta, e mais a checagem da chave; expansao
+    // que estoura falha fechado. Virgula fora de chave (`W,W` de trecho aninhado, lista do
+    // PowerShell) separa caminhos: cada pedaco conta.
+    // A palavra inteira e o trecho que comeca no caminho citado (`of="<W>"/../../f`: o prefixo
+    // `of=` faria a palavra inteira virar caminho relativo).
+    const i0 = p.limpo.indexOf(c);
+    const i = i0 > 0 && !/[{},]/.test(p.limpo.slice(0, i0)) ? i0 : -1;
+    let alternativas = i > 0 ? [p.limpo, p.limpo.slice(i)] : [p.limpo];
+    if (!ehPowerShell && /[{}]/.test(p.limpo)) {
+      if (sobeNaChave(p.limpo)) return true;
+      alternativas = expandirChaves(p.limpo, "u".repeat(p.limpo.length));
+      if (!alternativas) return true;
+      if (i > 0) alternativas = alternativas.concat(expandirChaves(p.limpo.slice(i), "u".repeat(p.limpo.length - i)) || ["\0"]);
+    }
+    return alternativas.some((a) => a.split(",").some((x) => x && foraDosWorktrees(normalizaCaminho(x, base))));
+  };
+  const protegido = (c, base, texto = "") => {
+    const n = normalizaCaminho(c, base);
+    if (!dentroDe(n, repo.principal) || ehScratchpad(n)) return false;
+    if (!repo.worktrees.some((w) => dentroDe(n, w))) return true;
+    // Palavras do texto original; cada uma com o `limpo` do texto com atalho de home expandido.
+    const palavras = palavrasDe(texto).map((p) => ({ cru: p.cru, limpo: palavrasDe(comCasa(p.cru)).map((x) => x.limpo).join(" ") || p.limpo }))
+      .filter((p) => p.cru.includes(c) || p.limpo.includes(c));
+    // Palavra nao achada: falha fechado, com a linha inteira no lugar da palavra.
+    if (!palavras.length) return /[{}$`]/.test(texto);
+    return palavras.some((p) => palavraQueSobe(p, base, c));
+  };
+  const citaProtegido = (texto, base) => caminhosCitados(texto, ehPowerShell).some((c) => protegido(c, base, texto));
+  const alvo = [{ dir: repo.principal, incerto: true }];
+  // Segmentacao nao confiavel (D2): a linha inteira e um segmento so, e nada e leitura.
+  // Bash com `\` + quebra: colar as linhas erra quando as contrabarras sao pares (`ls \\` + quebra +
+  // `rm <P>/f`), e nao colar erra a continuacao; a linha toda vira um segmento so.
+  const naoConfiavel = /\$\(|`|\$'|\\\r?\n/.test(comando) && !ehPowerShell
+    || ehPowerShell && (desalinhaAMascara(comando) || /[\u2018-\u201e]/.test(comando) || /"[^"]*\$\(/.test(comando) || /@['"]/.test(comando));
+  if (naoConfiavel) return citaProtegido(comando, cwd) ? alvo : [];
+
+  const segmentos = segmentosDaRede(comando, ehPowerShell);
+  // Config do git ou do pager mexida em qualquer segmento da linha (revisao de seguranca).
+  const configGitNaLinha = /(^|[\s;&|(])(export\s+)?(GIT_\w*|\w*PAGER)=|\$env:(GIT_|\w*PAGER)|\bgit\b[^;&|]*\sconfig\b/i.test(comando);
+  const leitura = segmentos.map((seg) => segmentoDeLeitura(tokensComAspas(seg), seg, ehPowerShell, configGitNaLinha));
+  // Pipeline com escritor (`Get-Item <P>/a | Set-Content -Value x`): o segmento de
+  // leitura alimenta quem escreve, entao os caminhos dele tambem contam.
+  const pipelineComEscritor = temForaDeAspas(comando, "|") && leitura.some((l) => !l);
+  const estado = { atual: cwd, incerto: false, pilhaPushd: [] };
+  for (let i = 0; i < segmentos.length; i += 1) {
+    const seg = segmentos[i];
+    const mov = resolverMovedor(seg, estado, ehPowerShell);
+    const base = mov.cwd;
+    const toks = tokensComAspas(seg);
+    if (leitura[i] && !pipelineComEscritor) {
+      // Leitura: conta o destino de redirecionamento e o que esta entre parenteses ou
+      // chaves (`Get-Content (Remove-Item <P>/f)` roda o de dentro).
+      for (const destino of destinosDeRedirecionamento(seg, ehPowerShell)) {
+        if (ehDescarteDeSaida(destino, ehPowerShell)) continue;
+        if (caminhosCitados(destino, ehPowerShell).concat([destino.replace(/^FileSystem::/i, "")]).some((c) => protegido(c, base, destino))) return alvo;
+      }
+      // Na chamada .NET de leitura, o argumento entre parenteses e o proprio alvo da leitura.
+      if (leitura[i] !== "net" && citaProtegido(trechosAninhados(seg), base)) return alvo;
+      continue;
+    }
+    // Fora de leitura: rodar com cwd no principal, ou citar caminho dele.
+    if (!mov.incerto && protegido(base, base)) return alvo;
+    // Texto cru (as aspas delimitam o caminho: `('<P>'+'/f')`); em `git`/`gh`, os tokens sem a mensagem (D4).
+    const semMensagem = semTextoDeMensagem(toks);
+    const texto = semMensagem === toks ? seg : semMensagem.map((t) => t.v).join(" ");
+    if (citaProtegido(texto, base)) return alvo;
+  }
+  return [];
+}
+
 function main() {
   let ev;
   try {
@@ -1464,6 +1857,8 @@ function main() {
     if (cwdPorSegmento(entrada.command, cwd, ehPS).some((s) => s.estouro)) {
       barraSemConferir("expansao de chaves grande demais para conferir");
     }
+    // Rede de caminho do principal (#552): somada aos alvos da lista, no fim do ramo.
+    const rede = alvosDaRede(entrada.command, cwd, ehPS);
     const verbo = verboNaLinha(entrada.command, VERBOS_QUE_MEXEM, nome);
     if (verbo === SUB_ANINHADO.verbo) barraSemConferir(MOTIVO_ANINHADO);
     // Escrita por redirecionamento ou cmdlet (D4, rodada 2): e checada TAMBEM na linha
@@ -1532,6 +1927,10 @@ function main() {
           }
         }
       }
+    }
+    if (rede.length) {
+      if (!alvos.length) motivo = "Comando que cita caminho do checkout principal (fora de leitura)";
+      alvos = alvos.concat(rede);
     }
   }
 

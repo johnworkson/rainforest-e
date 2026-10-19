@@ -18,6 +18,9 @@ GATE="$SRC/hooks/gate-worktree.cjs"
 # testando nada. Custou uma rodada inteira em 2026-08-09.
 RAIZ_POSIX="$(mktemp -d)"
 RAIZ="$(cygpath -m "$RAIZ_POSIX" 2>/dev/null || printf '%s' "$RAIZ_POSIX")"
+# Nome longo: no runner do CI o temp vem com o usuario em nome curto 8.3 e a casa em nome
+# longo, e as guardas "sob a casa" comparam texto. O nome curto tem secao propria (#552 8.3).
+RAIZ="$(node -e 'const fs=require("fs");try{process.stdout.write(fs.realpathSync.native(process.argv[1]).split(String.fromCharCode(92)).join("/"))}catch{process.stdout.write(process.argv[1])}' "$RAIZ")"
 trap 'rm -rf "$RAIZ_POSIX"' EXIT
 echo "(caixa de areia: $RAIZ)"
 
@@ -615,7 +618,7 @@ echo "== A1: alvosBash usa o ULTIMO -C, nao o primeiro (rodada 4, lote 3) =="
 # principal.
 gate "git -C worktree -C principal commit: ULTIMO manda, BARRA" 2 \
   "$(b "git -C $WT -C $R commit -m x" "$WT")"
-gate "git -C principal -C worktree commit: ULTIMO manda, PASSA" 0 \
+gate "git -C principal -C worktree commit: cita o principal fora de leitura, BARRA (rede #552, conservador)" 2 \
   "$(b "git -C $R -C $WT commit -m x" "$WT")"
 
 echo
@@ -1038,7 +1041,9 @@ gate "(#530) echo \"\$(git rev-parse HEAD)\" > f"        0 "$(wt "echo \"\$(git 
 gate "(#530) echo 'a\`b\`' > f"                          0 "$(wt "echo 'a\`b\`' > f")"
 gate "(#530) echo '{cd,x}' > f"                          0 "$(wt "echo '{cd,x}' > f")"
 gate "(#530) echo a{b,c} > f"                            0 "$(wt "echo a{b,c} > f")"
-gate "(#530) {c,}d P; echo x > f (bash nao muda o cwd)"  0 "$(wt "{c,}d $R; echo x > f")"
+# #552 (D2): o segmento {c,}d P cita o principal fora de leitura, e a rede barra; que o cwd nao
+# muda segue provado em testa-cwd-efetivo.sh.
+gate "(#530) {c,}d P; echo x > f (bash nao muda o cwd; a rede #552 barra)"  2 "$(wt "{c,}d $R; echo x > f")"
 gate "(#530) 'cd' hooks && echo x > f (no worktree)"     0 "$(wt "'cd' hooks && echo x > f")"
 gate "(#530) cd hooks > /dev/null; echo x > f"           0 "$(wt "cd hooks > /dev/null; echo x > f")"
 
@@ -1169,7 +1174,8 @@ gate "#530: { echo a; echo b; } > f do worktree, PASSA (grupo, nao expansao)" 0 
 # D1 (emenda da rodada 2): so o Bash expande. No PowerShell `{cd,X}` e bloco de script:
 # nao muda o cwd, entao o Set-Content relativo cai no worktree e PASSA. Se a expansao
 # valesse no PowerShell, `cd <principal>` mudaria o cwd e o caso BARRARIA.
-gate "#530 PowerShell: {cd,<principal>} e bloco de script, nao cd: Set-Content f do worktree PASSA" 0 "$(bp "{cd,$R} ; Set-Content f x" "$WT")"
+# #552 (D2): o bloco cita o principal fora de leitura, e a rede barra.
+gate "#530 PowerShell: {cd,<principal>} e bloco de script, nao cd: Set-Content f do worktree (a rede #552 barra)" 2 "$(bp "{cd,$R} ; Set-Content f x" "$WT")"
 
 echo
 echo "== #533: cmdlets de escrita do PowerShell =="
@@ -1195,7 +1201,7 @@ gate "#533: [IO.File]::WriteAllText(\$p,'x') do worktree, BARRA (alvo incerto)" 
 gate "#533 vizinho: [IO.File]::WriteAllText('<worktree>/f','x') do worktree, PASSA" 0 "$(bp "[IO.File]::WriteAllText('$WT/f','x')" "$WT")"
 gate "#533 vizinho: [IO.File]::Copy('<worktree>/a','<worktree>/b') do worktree, PASSA" 0 "$(bp "[IO.File]::Copy('$WT/a','$WT/b')" "$WT")"
 gate "#533 vizinho: [IO.File]::ReadAllText('<principal>/f') (leitura) do worktree, PASSA" 0 "$(bp "[IO.File]::ReadAllText('$R/f')" "$WT")"
-gate "#533 (d): ferramenta Bash, Set-Content <principal>/f x, do worktree, PASSA (sem alvo novo)" 0 "$(b "Set-Content $R/f x" "$WT")"
+gate "#533 (d): ferramenta Bash, Set-Content <principal>/f x, do worktree, BARRA (rede #552: cita o principal fora de leitura)" 2 "$(b "Set-Content $R/f x" "$WT")"
 
 echo
 echo "== #533 (e): emendas da rodada 2 (falha fechada e chamada .NET) =="
@@ -1504,6 +1510,431 @@ Copy-Item a.txt __R__/f'; do
 done
 gate "4a rev vizinho: Copy-Item -Path a.txt ⏎ -Destination b.txt (sem #), do worktree, PASSA" 0 "$(bp $'Copy-Item -Path a.txt `
   -Destination b.txt' "$WT")"
+
+
+echo "== #552: rede de caminho do principal =="
+# A rede (#552) barra, a partir de um worktree linkado, todo comando que cite caminho do
+# principal fora da lista de leitura. Placeholders: __R__ principal, __WT__ worktree,
+# __RB__ principal com contrabarra, __RM__ forma MSYS, __RL__ minusculo, __WN__ worktree
+# DENTRO do principal (para o caso com ..).
+WN="$R/.claude/worktrees/x"; mkdir -p "$R/.claude/worktrees"; git -C "$R" worktree add -q -b wn "$WN" >/dev/null 2>&1
+RB="${R//\//\\}"; RL="${R,,}"; RM="/${R:0:1}"; RM="${RM,,}${R:2}"
+s552() { local s; s=$(cat); s=${s//__RB__/$RB}; s=${s//__RM__/$RM}; s=${s//__RL__/$RL}; s=${s//__WN__/$WN}; s=${s//__R__/$R}; s=${s//__WT__/$WT}; printf "%s" "$s"; }
+gate "#552: Remove-Item <P>/f, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Remove-Item __R__/f
+EOC
+)" "$WT")"
+gate "#552: New-Object IO.StreamWriter('<P>/f'), do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+New-Object IO.StreamWriter('__R__/f')
+EOC
+)" "$WT")"
+gate "#552: Set-Content -Path (Join-Path '<P>' f) x, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Set-Content -Path (Join-Path '__R__' f) x
+EOC
+)" "$WT")"
+gate "#552: Get-Item <P>/a.txt | Set-Content -Value x, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Get-Item __R__/a.txt | Set-Content -Value x
+EOC
+)" "$WT")"
+gate "#552: Set-Content FileSystem::<P>/f x, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Set-Content FileSystem::__R__/f x
+EOC
+)" "$WT")"
+gate "#552: Clear-Content <P>/f, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Clear-Content __R__/f
+EOC
+)" "$WT")"
+gate "#552: Rename-Item <P>/a b, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Rename-Item __R__/a b
+EOC
+)" "$WT")"
+gate "#552: Expand-Archive a.zip -DestinationPath <P>/o, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Expand-Archive a.zip -DestinationPath __R__/o
+EOC
+)" "$WT")"
+gate "#552: Invoke-Command -ScriptBlock ([scriptblock]::Create('Set-Content <P>/f x')), do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Invoke-Command -ScriptBlock ([scriptblock]::Create('Set-Content __R__/f x'))
+EOC
+)" "$WT")"
+gate "#552: rm <P>/f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+rm __R__/f
+EOC
+)" "$WT")"
+gate "#552: P=<P>; echo x > P/f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+P=__R__; echo x > $P/f
+EOC
+)" "$WT")"
+gate "#552: {touch,<P>/f}, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+{touch,__R__/f}
+EOC
+)" "$WT")"
+gate "#552: robocopy src <P>/dst, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+robocopy src __R__/dst
+EOC
+)" "$WT")"
+gate "#552: curl -o <P>/f http://x, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+curl -o __R__/f http://x
+EOC
+)" "$WT")"
+gate "#552: tar -xf a.tar -C <P>, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+tar -xf a.tar -C __R__
+EOC
+)" "$WT")"
+gate "#552: rm ../../../f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+rm ../../../f
+EOC
+)" "$WN")"
+gate "#552: Remove-Item <PB><BS>f, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Remove-Item __RB__\f
+EOC
+)" "$WT")"
+gate "#552: Remove-Item '<PB><BS>f', do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Remove-Item '__RB__\f'
+EOC
+)" "$WT")"
+gate "#552: rm <PM>/f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+rm __RM__/f
+EOC
+)" "$WT")"
+gate "#552: rm <PL>/f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+rm __RL__/f
+EOC
+)" "$WT")"
+gate "#552: cat <P>/a.txt, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+cat __R__/a.txt
+EOC
+)" "$WT")"
+gate "#552: Get-Content <P>/a.txt, do worktree, PASSA" 0 "$(bp "$(s552 <<'EOC'
+Get-Content __R__/a.txt
+EOC
+)" "$WT")"
+gate "#552: Select-String x <P>/a.txt, do worktree, PASSA" 0 "$(bp "$(s552 <<'EOC'
+Select-String x __R__/a.txt
+EOC
+)" "$WT")"
+gate "#552: git -C <P> log -1, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+git -C __R__ log -1
+EOC
+)" "$WT")"
+gate "#552: ls <P>, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+ls __R__
+EOC
+)" "$WT")"
+gate "#552: Test-Path <P>/a, do worktree, PASSA" 0 "$(bp "$(s552 <<'EOC'
+Test-Path __R__/a
+EOC
+)" "$WT")"
+gate "#552: rm <W>/f, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+rm __WT__/f
+EOC
+)" "$WT")"
+gate "#552: Set-Content <W>/f y, do worktree, PASSA" 0 "$(bp "$(s552 <<'EOC'
+Set-Content __WT__/f y
+EOC
+)" "$WT")"
+gate "#552: git commit -m corrigido em <P>/a, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+git commit -m "corrigido em __R__/a"
+EOC
+)" "$WT")"
+gate "#552: gh issue comment 1 --body ver <P>/a, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+gh issue comment 1 --body "ver __R__/a"
+EOC
+)" "$WT")"
+gate "#552: cat <P>/a > <P>/b, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+cat __R__/a > __R__/b
+EOC
+)" "$WT")"
+gate "#552: Get-Content <P>/a | Out-File <P>/b, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Get-Content __R__/a | Out-File __R__/b
+EOC
+)" "$WT")"
+gate "#552: t = @'⏎x⏎'@; Get-Content <P>/a, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+$t = @'
+x
+'@; Get-Content __R__/a
+EOC
+)" "$WT")"
+gate "#552: Write-Output (1); Get-Content <P>/a, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Write-Output "$(1)"; Get-Content __R__/a
+EOC
+)" "$WT")"
+gate "#552: cat <P>/a | grep x, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+cat __R__/a | grep x
+EOC
+)" "$WT")"
+gate "#552: git -C <P> log --oneline | head -3, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+git -C __R__ log --oneline | head -3
+EOC
+)" "$WT")"
+gate "#552: Get-ChildItem <P> | Select-Object Name, do worktree, PASSA" 0 "$(bp "$(s552 <<'EOC'
+Get-ChildItem __R__ | Select-Object Name
+EOC
+)" "$WT")"
+gate "#552: echo hi, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+echo hi
+EOC
+)" "$WT")"
+gate "#552: cat a.txt > b.txt, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+cat a.txt > b.txt
+EOC
+)" "$WT")"
+gate "#552: Set-Content a.txt x, do worktree, PASSA" 0 "$(bp "$(s552 <<'EOC'
+Set-Content a.txt x
+EOC
+)" "$WT")"
+gate "#552: cd <P> && make, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+cd __R__ && make
+EOC
+)" "$WT")"
+gate "#552: cd <P>, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+cd __R__
+EOC
+)" "$WT")"
+gate "#552: [IO.File]::ReadAllText('<P>/f'), do worktree, PASSA" 0 "$(bp "$(s552 <<'EOC'
+[IO.File]::ReadAllText('__R__/f')
+EOC
+)" "$WT")"
+gate "#552: Copy-Item <P>/a.txt ., do worktree, PASSA" 0 "$(bp "$(s552 <<'EOC'
+Copy-Item __R__/a.txt .
+EOC
+)" "$WT")"
+gate "#552: cp <P>/a.txt ., do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+cp __R__/a.txt .
+EOC
+)" "$WT")"
+gate "#552: cp -t <P> a.txt, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+cp -t __R__ a.txt
+EOC
+)" "$WT")"
+gate "#552: Get-Content (Remove-Item <P>/f), do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Get-Content (Remove-Item __R__/f)
+EOC
+)" "$WT")"
+gate "#552: Set-Content -Path ('<P>'+'/f') x, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Set-Content -Path ('__R__'+'/f') x
+EOC
+)" "$WT")"
+gate "#552: Get-ChildItem <P> | Where-Object { _.Length -gt 0 }, do worktree, PASSA" 0 "$(bp "$(s552 <<'EOC'
+Get-ChildItem __R__ | Where-Object { $_.Length -gt 0 }
+EOC
+)" "$WT")"
+gate "#552: Get-ChildItem | Where-Object { Remove-Item <P>/f }, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Get-ChildItem | Where-Object { Remove-Item __R__/f }
+EOC
+)" "$WT")"
+gate "#552: cat <P>/a 2>&1 | head, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+cat __R__/a 2>&1 | head
+EOC
+)" "$WT")"
+gate "#552: Copy-Item <P>/a.txt ., do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+Copy-Item __R__/a.txt .
+EOC
+)" "$WT")"
+
+echo "-- #552: revisao de seguranca (leitura que escreve por opcao, redirecionamento cru, atalho de home) --"
+gate "#552 seg: git log -1 --output=<P>/f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+git log -1 --output=__R__/f
+EOC
+)" "$WT")"
+gate "#552 seg: sort a.txt -o <P>/f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+sort a.txt -o __R__/f
+EOC
+)" "$WT")"
+gate "#552 seg: uniq a.txt <P>/f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+uniq a.txt __R__/f
+EOC
+)" "$WT")"
+gate "#552 seg: find . -fls <P>/f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+find . -fls __R__/f
+EOC
+)" "$WT")"
+gate "#552 seg: rg x --pre <P>/x.sh, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+"rg" x --pre __R__/x.sh
+EOC
+)" "$WT")"
+gate "#552 seg: cat a >| <P>/f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+cat a >| __R__/f
+EOC
+)" "$WT")"
+gate "#552 seg: cat a 1<> <P>/f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+cat a 1<> __R__/f
+EOC
+)" "$WT")"
+gate "#552 seg: cat a > <P>/f, do worktree, BARRA" 2 "$(b "$(s552 <<'EOC'
+cat a > "__R__/f"
+EOC
+)" "$WT")"
+gate "#552 seg: Get-Content a *> <P>/f, do worktree, BARRA" 2 "$(bp "$(s552 <<'EOC'
+Get-Content a *> __R__/f
+EOC
+)" "$WT")"
+gate "#552 seg: cat <P>/a 2>/dev/null, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+cat __R__/a 2>/dev/null
+EOC
+)" "$WT")"
+gate "#552 seg: cat <P>/a 2>&1 | head -3, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+cat __R__/a 2>&1 | head -3
+EOC
+)" "$WT")"
+gate "#552 seg: grep -o x <P>/a, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+grep -o x __R__/a
+EOC
+)" "$WT")"
+gate "#552 seg: sort <P>/a, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+sort __R__/a
+EOC
+)" "$WT")"
+gate "#552 seg: uniq <P>/a, do worktree, PASSA" 0 "$(b "$(s552 <<'EOC'
+uniq __R__/a
+EOC
+)" "$WT")"
+# Atalho de home: a casa que o gate expande e a do Node (os.homedir), na forma com barras.
+CASA=$(node -e 'process.stdout.write(require("os").homedir().split(String.fromCharCode(92)).join(String.fromCharCode(47)))')
+case "${R,,}" in "${CASA,,}"/*) RT="~${R:${#CASA}}"; gate "#552 seg: rm ~/.../principal/f (atalho de home), do worktree, BARRA" 2 "$(b "rm $RT/f" "$WT")";; *) falhou=$((falhou+1)); echo "  FALHA #552 seg: o principal da caixa de areia nao fica sob a casa ($CASA), o caso de atalho nao mede nada";; esac
+case "${R,,}" in "${CASA,,}"/*) RT='${env:USERPROFILE}'"${R:${#CASA}}"; gate "#552 seg2: Get-Content a > \${env:USERPROFILE}/.../principal/f, do worktree, BARRA" 2 "$(bp "Get-Content a > $RT/f" "$WT")";; esac
+# Segunda revisao de seguranca: opcao citada, opcao abreviada ou colada, git que roda
+# comando da config, atribuicao antes do comando, destino de redirecionamento por partes.
+s552seg2() { gate "#552 seg2: $1, do worktree, $( [ "$2" = 2 ] && echo BARRA || echo PASSA)" "$2" "$($3 "$(printf '%s' "$1" | s552)" "$WT")"; }
+s552seg2 'find __R__ "-delete"' 2 b
+s552seg2 'git log -O__R__/f' 2 b
+s552seg2 'git log --outp=__R__/f' 2 b
+s552seg2 'git -c diff.external=x diff __R__/a' 2 b
+s552seg2 'git diff --ext-diff __R__/a' 2 b
+s552seg2 'GIT_EXTERNAL_DIFF=x git diff __R__/a' 2 b
+s552seg2 'sort -ro __R__/f a.txt' 2 b
+s552seg2 'sort --out=__R__/f a.txt' 2 b
+s552seg2 'sort --compress-program=x __R__/a' 2 b
+s552seg2 'cat a >"__R__"/f' 2 b
+s552seg2 "cat a > '__R__'/f" 2 b
+s552seg2 'Get-Content a *> "__R__"/f' 2 bp
+s552seg2 'git log --oneline -5 __R__' 0 b
+s552seg2 'git -C __R__ show HEAD:a.txt' 0 b
+s552seg2 'sort -r __R__/a' 0 b
+s552seg2 'grep -r x __R__ > /dev/null' 0 b
+s552seg2 "find __R__ -name '*.md'" 0 b
+# Terceira revisao: config do git em outro segmento, abreviacoes, $'...' no Bash.
+s552seg2 'export GIT_EXTERNAL_DIFF=x; git diff __R__/a' 2 b
+s552seg2 'git config diff.external x && git diff __R__/a' 2 b
+s552seg2 'sort --comp=x __R__/a' 2 b
+s552seg2 'git diff --ext __R__/a' 2 b
+s552seg2 'git diff --textc __R__/a' 2 b
+s552seg2 "cat __R__/a \$'x' > __R__/b" 2 b
+s552seg2 'git diff --exit-code --text __R__/a' 0 b
+# Revisao (rodada 1): atribuicao colada no PowerShell vira um token citado so, e nao e expressao.
+s552seg2 "\$p='__R__'; Remove-Item \$p/a.txt" 2 bp
+s552seg2 "\$p='__R__'; 'x' > \$p/f" 2 bp
+s552seg2 "\$env:X='__R__'; Remove-Item \$env:X/a.txt" 2 bp
+s552seg2 "\$p=\"__R__\" ; Remove-Item (Join-Path \$p a.txt)" 2 bp
+s552seg2 "'__R__/a.txt'" 0 bp
+s552seg2 "[string]\$p='__R__'; Remove-Item \$p/f" 2 bp
+s552seg2 "\$p,\$q='__R__','x'; Remove-Item \$p/f" 2 bp
+s552seg2 "\$p??='__R__'; Remove-Item \$p/f" 2 bp
+s552seg2 "\${a-b}='__R__'; Remove-Item \${a-b}/f" 2 bp
+# Revisao (rodada 2): chave termina o caminho, e valor colado de mensagem (D4). Do worktree
+# DENTRO do principal (__WN__), o layout real.
+s552rv2() { gate "#552 rv2: $1, cwd no worktree dentro do principal, $( [ "$2" = 2 ] && echo BARRA || echo PASSA)" "$2" "$($3 "$(printf '%s' "$1" | s552)" "$WN")"; }
+s552rv2 '{cd,__WN__} && git commit -m x' 0 b
+s552rv2 '{cd,__WN__} && echo x > f' 0 b
+s552rv2 'echo x > {__WN__,__WN__}/f' 0 b
+s552rv2 'echo x > {__R__/a,__WN__/b}' 2 b
+s552rv2 'git commit --message="corrigido em __R__/a"' 0 b
+s552rv2 "git commit --message='corrigido em __R__/a'" 0 b
+s552rv2 'gh issue create --title="ver __R__/a" --body="ver __R__/a"' 0 b
+s552rv2 'git commit -m"corrigido em __R__/a"' 2 b
+# Revisao de seguranca (c1508570): -m colado pode ser grupo de opcoes; chave + .. sobe do worktree.
+s552rv2 'git rebase -mx"rm __R__/f" HEAD' 2 b
+s552rv2 'echo x > {__WN__,y}/../../../f' 2 b
+s552rv2 'echo x > __WN__/.{.,}/.{.,}/.{.,}/f' 2 b
+s552rv2 'touch {__WN__/a,__WN__/b}' 0 b
+s552rv2 "echo x > __WN__/{'.''.',y}/{'.''.',y}/{'.''.',y}/f" 2 b
+s552rv2 'echo x > __WN__/{x,.}./{x,.}./{x,.}./f' 2 b
+s552rv2 'echo x > __WN__/.{,}./.{,}./.{,}./f' 2 b
+s552rv2 'echo x > __WN__/.{x,}./.{x,}./.{x,}./f' 2 b
+s552rv2 'touch __WN__/{a,b}.txt' 0 b
+# Isencao por palavra (revisao do delta): expansao na palavra do caminho tira a isencao; em
+# outra palavra da linha, nao.
+s552rv2 'D=../../..; touch __WN__/$D/f' 2 b
+s552rv2 'touch __WN__/$(printf x)/../../../f' 2 b
+s552rv2 'Remove-Item __WN__/$d/f' 2 bp
+s552rv2 'touch __WN__/.{x,}./.{x,}./.{x,}./f' 2 b
+s552rv2 'cd __WN__ && echo $(date) ${X}' 0 b
+s552rv2 'git -C __WN__ commit -m "fix: usa ${X} em $(date)"' 0 b
+s552rv2 'touch __WN__/{a,b}.{js,ts}' 0 b
+s552rv2 'touch __WN__/x.{a,b}.min.js' 0 b
+s552rv2 'touch __WN__/f{1..3}.txt' 0 b
+# Atalho de home expandido: a palavra nao e achada no texto, e a isencao falha fechado.
+case "${WN,,}" in "${CASA,,}"/*) WT_HOME="~${WN:${#CASA}}"; WT_HOMEV="\$HOME${WN:${#CASA}}"
+  gate "#552 rv2: touch ~/.../worktree/\$D/f (atalho de home + variavel), BARRA" 2 "$(b "touch $WT_HOME/\$D/f" "$WN")"
+  gate "#552 rv2: touch \$HOME/.../worktree/f (atalho de home, sem expansao), PASSA" 0 "$(b "touch $WT_HOMEV/f" "$WN")";;
+  *) falhou=$((falhou+1)); echo "  FALHA #552 rv2: worktree da caixa de areia fora da casa ($CASA), casos de atalho nao medem nada";; esac
+# Revisao do delta: palavra com aspa ou escape e uma palavra so; a palavra sem aspas e normalizada.
+s552rv2 "touch __WN__/'a b'/.{.,}/.{.,}/.{.,}/.{.,}/f" 2 b
+s552rv2 'touch __WN__/"a b"/.{.,}/.{.,}/.{.,}/.{.,}/f' 2 b
+s552rv2 'touch "__WN__/a b/$D/f"' 2 b
+s552rv2 'touch "__WN__"/../../../f' 2 b
+s552rv2 'touch __WN__/.""./.""./.""./f' 2 b
+s552rv2 'Remove-Item "__WN__"/../../../f' 2 bp
+s552rv2 'touch "__WN__/a b.txt"' 0 b
+s552rv2 'Set-Content "__WN__/a b.txt" x' 0 bp
+# Revisao do delta 6ed2beb6: $HOME no meio da palavra conta; HOME redefinido na linha fica de fora;
+# prefixo de opcao antes do caminho; continuacao de linha.
+s552rv2 'touch __WN__/$HOME/f' 2 b
+s552rv2 'Remove-Item __WN__/$env:USERPROFILE/f' 2 bp
+s552rv2 'git -C __WN__ commit -m "fix home page"' 0 b
+# Rodada extra (impasse): `\\` + quebra separa comandos; HOME no texto nao muda a isencao.
+s552rv2 "$(printf 'ls \\\\\\\\\nrm __R__/f')" 2 b
+s552rv2 "$(printf 'npm test \\\\\n  --silent')" 0 b
+s552rv2 'git commit -m "ajusta HOME"' 0 b
+s552rv2 'HOME=/tmp/h npm test' 0 b
+s552rv2 'echo "$HOME" > __WN__/out.txt' 0 b
+s552rv2 'touch __WN__/${HOME/x/y}/f' 2 b
+s552rv2 'dd if=a of="__WN__"/../../../f' 2 b
+s552rv2 'dd if=a of="__WN__"/f' 0 b
+s552rv2 "$(printf 'touch __WN__/.\\\n./.\\\n./.\\\n./f')" 2 b
+s552rv2 'touch __WN__/f.{js,ts}' 0 b
+s552rv2 'git commit --message="corrigido em __R__/a"' 0 bp
+s552rv2 'git commit --message=x __R__/a' 2 b
+case "${R,,}" in "${CASA,,}"/*) RT='$USERPROFILE'"${R:${#CASA}}"; gate "#552 seg3: rm \$USERPROFILE/.../principal/f, do worktree, BARRA" 2 "$(b "rm $RT/f" "$WT")";; esac
+
+echo "== #552 D6: pai inexistente =="
+# Com cwd no proprio principal a rede nao age (D3): so a lista decide, e ela precisa
+# achar o repositorio subindo ate um diretorio que existe.
+rm -rf "$R/n1" "$WT/n1"
+gate "#552 D6: New-Item -ItemType File -Path n1/n2/f -Force, cwd no principal, BARRA" 2 "$(bp 'New-Item -ItemType File -Path n1/n2/f -Force' "$R")"
+gate "#552 D6: [IO.Directory]::CreateDirectory('n1/n2/d'), cwd no principal, BARRA" 2 "$(bp "[IO.Directory]::CreateDirectory('n1/n2/d')" "$R")"
+gate "#552 D6: echo x > n1/n2/f (Bash), cwd no principal, BARRA" 2 "$(b 'echo x > n1/n2/f' "$R")"
+gate "#552 D6 vizinho: New-Item -ItemType File -Path n1/n2/f -Force, cwd no worktree, PASSA" 0 "$(bp 'New-Item -ItemType File -Path n1/n2/f -Force' "$WT")"
+gate "#552 D6 vizinho: [IO.Directory]::CreateDirectory('n1/n2/d'), cwd no worktree, PASSA" 0 "$(bp "[IO.Directory]::CreateDirectory('n1/n2/d')" "$WT")"
+gate "#552 D6 vizinho: echo x > n1/n2/f (Bash), cwd no worktree, PASSA" 0 "$(b 'echo x > n1/n2/f' "$WT")"
+
+echo "== #552: nome curto 8.3 do Windows =="
+# No runner do CI o temp vem com o usuario em nome curto 8.3 (`RUNNER~1`) e o git devolve o
+# nome longo: comparado por texto, o cwd nao caia em worktree nenhum e a rede nao agia.
+# Citar o principal pelo nome curto e o mesmo buraco pelo outro lado.
+curto() { powershell -NoProfile -Command "(New-Object -ComObject Scripting.FileSystemObject).GetFolder('$(cygpath -w "$1")').ShortPath" 2>/dev/null | tr -d '\r' | sed 's#\\#/#g'; }
+RC="$(curto "$R")"; WC="$(curto "$WT")"
+if [ -n "$RC" ] && [ "$RC" != "$(cygpath -m "$R")" ] && [ -n "$WC" ]; then
+  gate "#552 8.3: rm <P>/f com cwd no worktree pelo nome curto, BARRA" 2 "$(b "rm $R/f" "$WC")"
+  gate "#552 8.3: rm <P curto>/f, cwd no worktree, BARRA" 2 "$(b "rm $RC/f" "$WT")"
+  gate "#552 8.3: Remove-Item <P curto>/f, cwd no worktree, BARRA" 2 "$(bp "Remove-Item $RC/f" "$WT")"
+  gate "#552 8.3 vizinho: touch <W curto>/f, cwd no worktree pelo nome curto, PASSA" 0 "$(b "touch $WC/f" "$WC")"
+  # Juncao no principal apontando para fora: apagar a ENTRADA mexe no principal; o nome curto
+  # nao pode trocar a entrada pelo alvo.
+  if node -e 'require("fs").symlinkSync(process.argv[1], process.argv[2], "junction")' "$FORA" "$R/lnk" 2>/dev/null; then
+    gate "#552 8.3: rm -r <P curto>/lnk (juncao para fora), cwd no worktree, BARRA" 2 "$(b "rm -r $RC/lnk" "$WT")"
+    node -e 'require("fs").unlinkSync(process.argv[1])' "$R/lnk" 2>/dev/null
+  fi
+  # Juncao no worktree apontando para o principal, e caminho NOVO atraves dela: a escrita cai
+  # no principal; manter o link sem resolver deixaria o texto "dentro do worktree".
+  if node -e 'require("fs").symlinkSync(process.argv[1], process.argv[2], "junction")' "$R" "$WT/lnk2" 2>/dev/null; then
+    gate "#552 8.3: touch <W curto>/lnk2/novo/f (juncao para o principal), BARRA" 2 "$(b "touch $WC/lnk2/novo/f" "$WT")"
+    node -e 'require("fs").unlinkSync(process.argv[1])' "$WT/lnk2" 2>/dev/null
+  else
+    echo "  pulado: juncao nao criavel"
+  fi
+else
+  echo "  pulado: sem nome curto 8.3 neste volume (powershell ausente ou 8dot3name desligado)"
+fi
 
 echo
 echo "== resultado: $ok ok, $falhou falha(s) =="
