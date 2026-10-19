@@ -1,0 +1,194 @@
+{
+  "slug": "2026-10-19-estado-reabrir",
+  "titulo": "Reabrir revisar/verificar quando o codigo muda depois do ok (#567, #529)",
+  "criado_em": "2026-10-19",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-19-estado-reabrir.md",
+    "em": "2026-10-19"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-19-estado-reabrir.md",
+    "tarefas": 4,
+    "paralelas": [],
+    "em": "2026-10-19"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-19",
+    "tarefas_ok": 4,
+    "tarefas": 4,
+    "carimbos": [
+      {
+        "tarefa": 1,
+        "hash_base": "ffdda85a",
+        "iteracao": 1,
+        "sessao": "2000cb9c-f260-4626-b420-5d6adac18fc8",
+        "ts": "2026-10-19T15:02:35.666Z"
+      },
+      {
+        "tarefa": 2,
+        "hash_base": "071037f7",
+        "iteracao": 1,
+        "sessao": "2000cb9c-f260-4626-b420-5d6adac18fc8",
+        "ts": "2026-10-19T15:08:51.458Z"
+      },
+      {
+        "tarefa": 3,
+        "hash_base": "f35779a8",
+        "iteracao": 1,
+        "sessao": "2000cb9c-f260-4626-b420-5d6adac18fc8",
+        "ts": "2026-10-19T15:16:54.482Z"
+      }
+    ],
+    "em": "2026-10-19",
+    "integradas": [
+      1,
+      2,
+      3
+    ],
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-estado-reabrir.sh, secao D1 (b), (e)-(w)"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-estado-reabrir.sh, secao D3: reabrir"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-estado-reabrir.sh, secao D4: de que nao casa"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "n/a",
+        "motivo": "texto de skill, CHANGELOG, versao e ancora"
+      }
+    ],
+    "comando": "bash scripts/testa-estado-pendencia.sh; bash scripts/testa-plugin-codex.sh; bash scripts/testa-estado-reabrir.sh",
+    "saida": "ok: 40 falhou: 0; exit 0; ok: 92 falhou: 0",
+    "reaberturas": 4,
+    "rodada": 7
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "97a9c7d49b0f8c6a23b68da0db8dedb2c2262030",
+      "caminhos_sujos": [
+        "docs/rainforest/estado/2026-10-19-estado-reabrir.json"
+      ]
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a1dd657437ddbff4a",
+        "veredito": "ok",
+        "em": "2026-10-19",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/2000cb9c-f260-4626-b420-5d6adac18fc8/subagents/agent-a1dd657437ddbff4a.jsonl"
+      }
+    ],
+    "achados": 0,
+    "design": [
+      1,
+      2,
+      3
+    ],
+    "em": "2026-10-19",
+    "em_voo": [],
+    "rodada": 7,
+    "bloqueantes": [
+      1
+    ],
+    "rodadas_extra": [
+      {
+        "texto": "usuario liberou 4a rodada para consertar achados 1-7 da revisao 3 (recomendado)",
+        "em": "2026-10-19"
+      }
+    ],
+    "base": "a5e2292f724e949a5619f6ec5b71738b7dd6eead",
+    "head": "97a9c7d49b0f8c6a23b68da0db8dedb2c2262030"
+  },
+  "verificar": {
+    "status": "ok",
+    "em": "2026-10-19",
+    "comando": "bash scripts/testa-estado-reabrir.sh",
+    "saida": "ok: 92   falhou: 0; testa-estado-pendencia 40/0; testa-plugin-codex exit 0",
+    "sensor_externo": "bash scripts/testa-estado-reabrir.sh",
+    "head": "97a9c7d49b0f8c6a23b68da0db8dedb2c2262030"
+  },
+  "fechar": {
+    "status": "pendente",
+    "em": "2026-10-19"
+  },
+  "decididos": [
+    {
+      "pergunta": "Q1 revisao 1: verificar ok com --raiz grava HEAD?",
+      "escolha": "nao grava; exigir fechar so avisa",
+      "porque": "HEAD da outra arvore comparado na arvore do estado recusava para sempre (usuario: recomendado)",
+      "estagio": "executar",
+      "em": "2026-10-19T17:12:34.915Z"
+    },
+    {
+      "pergunta": "Q2 revisao 1: o que conta como codigo depois do verificar?",
+      "escolha": "interseccao de head..HEAD com merge-base(origin/padrao)..HEAD",
+      "porque": "trazer a main depois do verificar acusava o que veio dela (usuario: recomendado)",
+      "estagio": "executar",
+      "em": "2026-10-19T17:12:35.003Z"
+    },
+    {
+      "pergunta": "Q3 revisao 1: edicao nao commitada conta?",
+      "escolha": "sim, rastreados sujos fora das isencoes",
+      "porque": "entraria no commit do passo 1 do fechar sem revisao (usuario: recomendado)",
+      "estagio": "executar",
+      "em": "2026-10-19T17:12:35.094Z"
+    },
+    {
+      "pergunta": "Q4 revisao 1: estado de outro slug e codigo?",
+      "escolha": "nao; docs/rainforest/estado/*.json isento nesta trava",
+      "porque": "o lote carrega o fechar ok do fluxo anterior; e rastro, nunca entrega (usuario: recomendado)",
+      "estagio": "executar",
+      "em": "2026-10-19T17:12:35.181Z"
+    },
+    {
+      "pergunta": "Q1 revisao 2: trava fora do caminho real do fechar?",
+      "escolha": "mesma recusa no marcar fechar ok; skill manda rodar exigir de novo antes de republicar",
+      "porque": "o conserto de CI vem depois do exigir da abertura (usuario: recomendado)",
+      "estagio": "executar",
+      "em": "2026-10-19T17:42:27.015Z"
+    },
+    {
+      "pergunta": "Q2 revisao 2: re-marcar verificar ok destrava sem revisao?",
+      "escolha": "verificar ok recusa codigo depois do HEAD do instantaneo do revisar",
+      "porque": "o desvio mais curto passava pela trava (usuario: recomendado)",
+      "estagio": "executar",
+      "em": "2026-10-19T17:42:27.132Z"
+    },
+    {
+      "pergunta": "Q3 revisao 2: formula da D1 com falso positivo e negativo",
+      "escolha": "A: patch-id por arquivo da mudanca da branch antes e depois",
+      "porque": "todo PR de release mexe no CHANGELOG junto com a main (usuario: recomendado)",
+      "estagio": "executar",
+      "em": "2026-10-19T17:42:27.243Z"
+    }
+  ],
+  "reaberturas": [
+    {
+      "em": "2026-10-19",
+      "de": "revisar",
+      "motivo": "revisao 4 ok com 5 nao bloqueantes que cabem no PR: -U0 deixa passar troca de lugar com merge-base igual; git mv commitado sem caso; maxBuffer e erro-como-mudanca sem caso isolado; RAIZ em subpasta; candidatos engolem erro do git"
+    },
+    {
+      "em": "2026-10-19",
+      "de": "verificar",
+      "motivo": "CI vermelho no PR #570: testa-estado-pendencia (require sem guarda de conferir-fluxo.cjs em desQueNaoCasam) e testa-plugin-codex (ancora do corpo de fechar)"
+    }
+  ]
+}

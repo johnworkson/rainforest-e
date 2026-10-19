@@ -736,6 +736,125 @@ function caminhosSujos() {
     .sort();
 }
 
+/**
+ * D1/D2 (#567): arquivos de CÓDIGO que mudaram depois de `head` (o HEAD gravado no
+ * `verificar ok`, ou o do instantâneo do `revisar`). Com `origin/<padrão>`, compara por
+ * arquivo a mudança DA BRANCH antes e depois (`git patch-id`, que ignora deslocamento de
+ * linha): `merge-base(head)..head` contra `merge-base(HEAD)..HEAD`. Trazer a padrão não
+ * acusa nem quando ela mexe no mesmo arquivo; apagar ou reverter o que a branch tinha
+ * acusa. Sem a padrão (repo só local), vale `head..HEAD`. Somam-se os rastreados sujos.
+ * "Código" é o que o `creep` não isenta (`globsIsentos`), e o estado de qualquer slug
+ * também fica fora: é rastro de fluxo, nunca entrega. Erro do git (o `head` não existe
+ * mais) devolve lista vazia com aviso — a trava não tranca por falta de dado (D5).
+ */
+function arquivosDeCodigoDesde(head, slug, estado) {
+  let globsIsentos, globMatches;
+  try {
+    ({ globsIsentos, globMatches } = require('./conferir-fluxo.cjs'));
+  } catch (e) {
+    console.error(`aviso: não consegui carregar as isenções do creep (${e.message}); a trava de código não rodou.`);
+    return [];
+  }
+  // `maxBuffer` largo: com o 1 MiB padrão, o diff de arquivo grande estourava e o
+  // arquivo passava como "não mudou" (revisão 3, achado 1).
+  // O git roda da raiz do repositório: com `RAIZ` numa subpasta, `ls-tree` e o pathspec
+  // liam os nomes relativos ao cwd e o `--name-only` os devolvia relativos à raiz. O
+  // prefixo da subpasta sai no fim, para casar com as isenções (relativas a `RAIZ`).
+  const topo = spawnSync(caminhoExecutavel('git'), ['rev-parse', '--show-toplevel', '--show-prefix'], { cwd: RAIZ, encoding: 'utf8' });
+  const [raizRepo, prefixo] = topo.status === 0 ? topo.stdout.split(/\r?\n/) : [RAIZ, ''];
+  const git = (args, input) => spawnSync(caminhoExecutavel('git'), ['-c', 'core.quotepath=false', ...args], { cwd: raizRepo, encoding: 'utf8', input, maxBuffer: 1024 * 1024 * 1024 });
+  const nomes = (txt) => txt.split('\0').map((f) => f.replace(/\\/g, '/')).filter((f) => f.length > 0);
+  const literal = (f) => `:(top,literal)${f}`;
+  // `--no-renames`: renomeação vira apagado + criado, e o nome antigo (que pode não ser
+  // isento) não some atrás do novo.
+  const r = git(['diff', '--no-renames', '--name-only', '-z', head, 'HEAD']);
+  if (r.status !== 0) {
+    console.error(`aviso: não consegui ler o diff desde o verificar (${head}); a trava de código não rodou.`);
+    return [];
+  }
+  let mudados = nomes(r.stdout);
+  const padrao = `origin/${branchPadrao(RAIZ)}`;
+  const mbAntes = git(['merge-base', head, padrao]);
+  const mbAgora = git(['merge-base', 'HEAD', padrao]);
+  if (mbAntes.status === 0 && mbAgora.status === 0) {
+    const antes = [mbAntes.stdout.trim(), head];
+    const agora = [mbAgora.stdout.trim(), 'HEAD'];
+    // Impressão da mudança da branch num arquivo; '' quando a branch não o muda. `-U0`:
+    // sem contexto, a linha da padrão vizinha à da branch não entra no hash. `--verbatim`:
+    // indentação conta (o `--stable` a descartava). Erro do git vale como mudança: um
+    // arquivo sem impressão não pode passar por igual.
+    const impressao = ([a, b], f) => {
+      const d = git(['diff', '--no-renames', '-U0', '--binary', a, b, '--', literal(f)]);
+      if (d.status !== 0 || d.error) return `erro ${Math.random()}`;
+      if (!d.stdout) return '';
+      const p = git(['patch-id', '--verbatim'], d.stdout);
+      if (p.status !== 0 || p.error) return `erro ${Math.random()}`;
+      return (p.stdout || '').split(' ')[0];
+    };
+    // Modo e blob do arquivo numa árvore; '' quando ele não existe nela.
+    const entrada = (arvore, f) => {
+      const t = git(['ls-tree', '-z', '--full-tree', arvore, '--', literal(f)]);
+      return t.status === 0 ? t.stdout.split('\t')[0] : `erro ${Math.random()}`;
+    };
+    const dAntes = git(['diff', '--no-renames', '--name-only', '-z', ...antes]);
+    const dAgora = git(['diff', '--no-renames', '--name-only', '-z', ...agora]);
+    // Sem as listas de candidatos, fica a lista de `head..HEAD` inteira: erro não esvazia.
+    if (dAntes.status === 0 && dAgora.status === 0) {
+      const candidatos = new Set([...nomes(dAntes.stdout), ...nomes(dAgora.stdout)]);
+      // Conteúdo igual ao verificado não mudou, qualquer que seja o caminho até ele (squash
+      // na padrão, conflito de versão resolvido para o valor da branch). Com a padrão
+      // parada, não há ruído dela a filtrar e o conteúdo diferente basta: a impressão sem
+      // contexto não vê a mesma linha mudada de lugar.
+      const padraoParada = antes[0] === agora[0];
+      mudados = [...candidatos].filter((f) => entrada(head, f) !== entrada('HEAD', f)
+        && (padraoParada || impressao(antes, f) !== impressao(agora, f)));
+    }
+  }
+  // `-z`: nome com espaço sai cru, sem as aspas do porcelain v1 que furavam o glob de
+  // isenção; na renomeação o nome novo vem primeiro e o antigo no campo seguinte.
+  const st = git(['status', '--porcelain', '-z', '--no-renames']);
+  const sujos = [];
+  if (st.status === 0) {
+    const campos = st.stdout.split('\0');
+    for (let i = 0; i < campos.length; i++) {
+      const c = campos[i];
+      if (c.length < 4) continue;
+      if (/[RC]/.test(c.slice(0, 2))) i++;
+      if (!c.startsWith('??')) sujos.push(c.slice(3).replace(/\\/g, '/'));
+    }
+  }
+  const relativo = (abs) => path.relative(RAIZ, path.resolve(RAIZ, abs)).split(path.sep).join('/');
+  const isentos = globsIsentos({
+    slug,
+    design: relativo(docDoEstagio('design', slug, estado)),
+    plano: relativo(docDoEstagio('planos', slug, estado)),
+    globsDoPlano: [],
+  });
+  const relativoARaiz = (f) => (prefixo && f.startsWith(prefixo) ? f.slice(prefixo.length) : f);
+  return [...new Set([...mudados, ...sujos].map(relativoARaiz))]
+    .sort()
+    .filter((f) => !globMatches(f, 'docs/rainforest/estado/*.json') && !isentos.some((g) => globMatches(f, g)));
+}
+
+/**
+ * A recusa da D1, uma só para os três pontos que a aplicam: `exigir fechar` e
+ * `marcar fechar ok` contra o `verificar.head`, e `marcar verificar ok` contra o HEAD
+ * do instantâneo do `revisar` (refazer só o `verificar` não pula a revisão). Devolve a
+ * mensagem, ou `null` sem código mudado.
+ */
+function recusaCodigoDepois(slug, estado, head, quem, etapa) {
+  const codigoDepois = arquivosDeCodigoDesde(head, slug, estado);
+  if (codigoDepois.length) {
+    return [
+      `RECUSADO: '${etapa}' com código alterado depois do '${quem}'. Ele foi feito sobre um código anterior:`,
+      ...codigoDepois.map((a) => `  ${a}`),
+      'Reabra o executar e refaça revisar e verificar:',
+      `  node scripts/estado.cjs reabrir --slug ${slug} --estagio executar --motivo "<o que mudou>"`,
+    ].join('\n');
+  }
+  return null;
+}
+
 function capturarSnapshot() {
   try {
     return {
@@ -1088,6 +1207,46 @@ function extrairNumerosTarefa(slug, estado) {
   if (conteudo === null) return null;
 
   return new Set(extrairTarefas(conteudo).map((t) => t.numero));
+}
+
+/**
+ * D4 (#529): tarefa cujo `de:` da `mutacao:` nao aparece no fonte que ela cita.
+ * A contagem e a mesma do `cobertura` do conferir-fluxo.cjs (mesmas limpezas de
+ * crase, mesmo resolvedor, mesmo contarOcorrencias), para os dois concordarem.
+ * Arquivo ausente nao entra: segue sem recusa, como hoje.
+ *
+ * @returns {Array<{tarefa: number, arquivo: string}>}
+ */
+function desQueNaoCasam(slug, estado) {
+  const arquivo_plano = docDoEstagio('planos', slug, estado);
+  if (!fs.existsSync(arquivo_plano)) return [];
+  // Sem o leitor de plano (instalação parcial, caixa de teste) a checagem não roda: a
+  // catraca de cobertura logo acima já avisou do mesmo motivo.
+  let extrairTarefas, lerMarkdown, contarOcorrencias;
+  try {
+    ({ extrairTarefas, lerMarkdown } = require('./conferir-fluxo.cjs'));
+    ({ contarOcorrencias } = require(path.join(__dirname, '..', 'hooks', 'lib', 'contar-ocorrencias.cjs')));
+  } catch (_) {
+    return [];
+  }
+  const conteudo = lerMarkdown(arquivo_plano);
+  if (conteudo === null) return [];
+
+  const naoCasam = [];
+  for (const tarefa of extrairTarefas(conteudo)) {
+    const mutacao = tarefa.mutacao;
+    if (!mutacao || !mutacao.campos.de || mutacao.campos.de.toLowerCase().includes('n/a')) continue;
+    const arquivo = mutacao.campos.arquivo ? mutacao.campos.arquivo.replace(/^`|`$/g, '') : null;
+    if (!arquivo) continue;
+    const de = mutacao.campos.de.replace(/^`|`$/g, '');
+    const raiz = mutacao.campos.raiz ? mutacao.campos.raiz.replace(/^`|`$/g, '') : '';
+    const caminho = path.resolve(RAIZ, raiz, arquivo);
+    if (!fs.existsSync(caminho) || !fs.statSync(caminho).isFile()) continue;
+    if (contarOcorrencias(fs.readFileSync(caminho, 'utf-8'), de) === 0) {
+      naoCasam.push({ tarefa: tarefa.numero, arquivo });
+    }
+  }
+  return naoCasam;
 }
 
 /** @returns {string|null} mensagem de recusa, ou null se passou/nao se aplica */
@@ -2133,6 +2292,7 @@ const FLAGS_POR_SUBCOMANDO = {
   leve: ['motivo', 'repo'],
   decidir: ['slug', 'pergunta', 'escolha', 'porque'],
   decididos: ['slug'],
+  reabrir: ['slug', 'estagio', 'motivo'],
 };
 
 function arg(nome, obrigatorio = true) {
@@ -2584,7 +2744,7 @@ function main() {
   // Comandos que acrescentam a uma lista (#545, D2 emendado): leitura, validação e gravação
   // INTEIRAS sob a trava do fluxo, relendo o estado dentro dela, como o `decidir`. Os
   // outros (marcar, exigir) leem fora da trava e a gravação mescla por campo.
-  const TRAVA_NO_COMANDO = ['pendencia', 'destinar', 'liberar', 'liberar-teto', 'decidir'];
+  const TRAVA_NO_COMANDO = ['pendencia', 'destinar', 'liberar', 'liberar-teto', 'decidir', 'reabrir'];
   const rodarComando = () => {
   const estado = ler(slug);
   if (!estado) {
@@ -2752,6 +2912,16 @@ function main() {
             ...estagiosOrfaos.map((e) => `  node scripts/estado.cjs destinar --slug ${slug} --estagio ${e} --json '{"destinos":[...]}'`),
           ].join('\n'));
           process.exit(2);
+        }
+        // D1 (#567): commit de código depois do `verificar ok` reabre por mecanismo, não por memória.
+        if (!estado.verificar || !estado.verificar.head) {
+          console.error("aviso: 'verificar' sem HEAD gravado (estado de antes deste fluxo): não dá para conferir se o código mudou depois dele.");
+        } else {
+          const recusa = recusaCodigoDepois(slug, estado, estado.verificar.head, 'verificar ok', 'fechar');
+          if (recusa) {
+            console.error(recusa);
+            process.exit(2);
+          }
         }
       }
       console.log(`ok: pre-requisitos de '${estagio}' fechados`);
@@ -3067,6 +3237,24 @@ function main() {
           process.exit(2);
         }
       }
+      // D1 (#567), emenda da revisão 2: a trava também vale onde o fluxo de fato passa
+      // depois do conserto de CI (`marcar fechar ok`) e no `verificar ok` refeito sobre
+      // código que o `revisar` não viu.
+      const refCodigo = estagio === 'fechar'
+        ? { head: estado.verificar && estado.verificar.head, quem: 'verificar ok' }
+        : estagio === 'verificar' && !raizCodigo
+          ? { head: estado.revisar && estado.revisar.snapshot && estado.revisar.snapshot.head, quem: 'revisar' }
+          : null;
+      if (refCodigo && !refCodigo.head && estagio === 'fechar') {
+        console.error("aviso: 'verificar' sem HEAD gravado (estado antigo, ou verificar com --raiz): não dá para conferir se o código mudou depois dele.");
+      }
+      if (refCodigo && refCodigo.head) {
+        const recusa = recusaCodigoDepois(slug, estado, refCodigo.head, refCodigo.quem, estagio);
+        if (recusa) {
+          console.error(recusa);
+          process.exit(2);
+        }
+      }
       // Contrato de veredito (D3, D6 — Tarefa 5): 'ok' so fecha 'revisar' se
       // a janela armada pelo ultimo 'exigir --estagio revisar' existir e for
       // toda 'ok'. Roda DEPOIS do backstop de mutacao (mesma ordem: as duas
@@ -3086,6 +3274,16 @@ function main() {
         const recusa_catraca = verificarCatracaMutacao(slug, estado.executar, estado, extra);
         if (recusa_catraca) {
           console.error(recusa_catraca);
+          process.exit(2);
+        }
+        // D4 (#529): o codigo ja nasceu neste `executar ok`, entao `de:` que nao
+        // casa no fonte e divergencia do plano: recusa e nomeia, antes de gravar.
+        const naoCasam = desQueNaoCasam(slug, estado);
+        if (naoCasam.length) {
+          console.error('RECUSADO: o `de:` da mutacao nao casa no fonte (o fonte mudou desde o plano; emende o plano):');
+          for (const n of naoCasam) {
+            console.error(`tarefa ${n.tarefa}: de: nao casa em ${n.arquivo} — o fonte mudou desde o plano; emende o plano`);
+          }
           process.exit(2);
         }
       }
@@ -3196,6 +3394,18 @@ function main() {
     // `tentativas` e `liberado_em` também somem no `ok`, mas a lógica é manual aqui.
     const baseAnterior = baseParaFundir(estagio, estado[estagio], status, extra);
     const blocoNovo = { ...baseAnterior, ...extra, status, em: hoje() };
+    // D1 (#567): `verificar ok` grava o HEAD em que rodou. Sai do `--json` de propósito:
+    // quem grava o `head` é a catraca, não a mão. Com `--raiz` não grava: o código mora
+    // noutra árvore, o `exigir fechar` compararia HEADs de repositórios diferentes e
+    // recusaria para sempre; sem `head`, ele só avisa.
+    if (estagio === 'verificar' && status === 'ok') {
+      delete blocoNovo.head;
+      const arvoreDoHead = raizCodigo ? null : RAIZ;
+      if (arvoreDoHead) {
+        const h = spawnSync(caminhoExecutavel('git'), ['rev-parse', 'HEAD'], { cwd: arvoreDoHead, encoding: 'utf8' });
+        if (h.status === 0) blocoNovo.head = h.stdout.trim();
+      }
+    }
 
     // Quando um estágio é reprovado, incrementa o contador (DEPOIS de fundir com base)
     if (status === 'reprovado') {
@@ -3302,7 +3512,37 @@ function main() {
     return;
   }
 
-  console.error('uso: iniciar | ler | deixado | destinar | pendencia | marcar | proximo | exigir | liberar | listar | concluido | veredito | registrar-flake | liberar-teto | decidir | decididos');
+  if (cmd === 'reabrir') {
+    // D3 (#567, #529): volta o 'executar' quando o código muda depois do 'ok' de um estágio
+    // posterior. Toda recusa sai 2 ANTES de gravar: o JSON fica como estava.
+    const estagio = arg('estagio');
+    const motivo = arg('motivo');
+    if (estagio !== 'executar') {
+      console.error(`RECUSADO: reabrir só aceita --estagio executar nesta versão (veio '${estagio}').`);
+      process.exit(2);
+    }
+    if (!motivo.trim()) {
+      console.error('RECUSADO: falta --motivo "<o que mudou>" (texto não vazio). Sem o motivo, a reabertura não é registrada.');
+      process.exit(2);
+    }
+    const aprovado = (e) => Boolean(estado[e] && (estado[e].status === 'ok' || estado[e].status === 'aprovado'));
+    const de = ['fechar', 'verificar', 'revisar'].find(aprovado);
+    if (!de) {
+      console.error('RECUSADO: nada a reabrir — nenhum de revisar, verificar ou fechar está em ok/aprovado.');
+      process.exit(2);
+    }
+    estado.executar = { ...estado.executar, status: 'parcial', em: hoje() };
+    for (const e of ['revisar', 'verificar', 'fechar']) if (estado[e]) estado[e] = { ...estado[e], status: 'pendente', em: hoje() };
+    const reaberturas = Array.isArray(estado.reaberturas) ? estado.reaberturas : [];
+    estado.reaberturas = [...reaberturas, { em: hoje(), de, motivo: motivo.trim() }];
+    gravar(slug, estado);
+    console.log(`reaberto: executar (de ${de})`);
+    const p = proximo(estado);
+    console.log(p ? `proximo: ${p}` : 'completo');
+    return;
+  }
+
+  console.error('uso: iniciar | ler | deixado | destinar | pendencia | marcar | proximo | exigir | liberar | listar | concluido | veredito | registrar-flake | liberar-teto | decidir | decididos | reabrir');
   process.exit(1);
   };
   return TRAVA_NO_COMANDO.includes(cmd) ? comTravaDoFluxo(slug, rodarComando) : rodarComando();

@@ -217,6 +217,10 @@ trabalho para `executar`, com os achados numerados como a lista de
 pendências da próxima rodada. O redespacho é o laço de `references/laco.md`:
 crítica literal, teto de 3, parada em achado `[design]`.
 
+Revisão aprovada com achado que cabe no PR volta por
+`estado.cjs reabrir --slug <slug> --estagio executar --motivo "<achados>"` (#529).
+`de:` que o conserto moveu: emende o plano.
+
 **Condição de parada**: sem diff, não há review. Reportar isso — branch
 sem commit novo, `head` que não existe, worktree que não foi integrado —
 vale mais que produzir um veredito sobre o que a memória da conversa
