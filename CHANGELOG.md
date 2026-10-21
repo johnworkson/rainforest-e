@@ -10,6 +10,25 @@ que existe delas é o commit de release (`git log --grep="^Versao "`), e reescre
 29 releases de memória produziria nota bonita e errada. Versão nova daqui em diante
 entra aqui no mesmo commit que sobe o `version` do `plugin.json`.
 
+## 1.72.0 — 2026-10-21
+
+- **Catraca de mutação mede projeto com runtime vivo (#527, #569).** O `conferir-mutacao.cjs` copia a raiz para o
+  temporário e mede lá, e um projeto Unity com o editor aberto não deixa: o editor trava `Temp/` (cópia com `EBUSY`,
+  exit 69) e a bateria barata (`unity command run_tests`) só fala com o editor da pasta original. Toda tarefa saía
+  `pulada` e o `verificar` nunca fechava. Agora `--no-lugar` não copia: muta o arquivo real, roda a bateria na
+  própria `--raiz` e restaura os bytes originais em toda saída (veredito, estouro de tempo, sinal), conferindo byte a
+  byte. Sem a flag, nada muda.
+- **O modo no lugar tem guarda-corpo.** Recusa (exit 4) o alvo sujo, não rastreado ou ignorado no git (o git precisa
+  poder desfazer), o `git` que falha dentro do repositório (ou não reconhece um `.git` corrompido), o arquivo editado durante o baseline, e outra
+  execução viva com o mesmo arquivo mutado. Antes de mutar, grava os bytes originais num backup no temporário, só do
+  usuário corrente: se o processo morrer sem restaurar, a próxima execução **sobre o mesmo arquivo** restaura o que
+  ainda está mutado e deixa intocado (com aviso) o que mudou depois. Arquivo editado durante a bateria pós-mutação
+  não é sobrescrito: sai 1 com o backup preservado. Durante a bateria, o stderr avisa que o fonte real está mutado.
+  Fora de repo git, mede e avisa que não há conferência pelo git.
+- **No plano, `no-lugar: sim` no bloco `mutacao:`.** O `conferir-fluxo.cjs mutacoes` passa `--no-lugar` à catraca, e a
+  `cobertura` recusa outro valor. O campo é por tarefa porque traz de volta o risco da #266: quem ler o arquivo
+  durante a bateria lê o mutante.
+
 ## 1.71.0 — 2026-10-21
 
 - **Agente que escreve despacha com a sessão fora de repo git (#565).** Fora de repo, o harness recusa

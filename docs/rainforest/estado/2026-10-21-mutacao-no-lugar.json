@@ -1,0 +1,164 @@
+{
+  "slug": "2026-10-21-mutacao-no-lugar",
+  "titulo": "2026-10-21-mutacao-no-lugar",
+  "criado_em": "2026-10-21",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-21-mutacao-no-lugar.md",
+    "aprovado_por": "usuario: recomendado (Q1-Q3)",
+    "em": "2026-10-21"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-21-mutacao-no-lugar.md",
+    "tarefas": 7,
+    "paralelas": [],
+    "em": "2026-10-21"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-21",
+    "tarefas_ok": 18,
+    "tarefas": 18,
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, casos N1 e N2"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso S1"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso O1"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso V1"
+      },
+      {
+        "tarefa": 5,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-fluxo-no-lugar.sh, caso F1"
+      },
+      {
+        "tarefa": 6,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-fluxo-no-lugar.sh, caso C1"
+      },
+      {
+        "tarefa": 7,
+        "resultado": "n/a",
+        "motivo": "texto e número de versão, sem comportamento a inverter"
+      },
+      {
+        "tarefa": 8,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso R3"
+      },
+      {
+        "tarefa": 9,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso R4"
+      },
+      {
+        "tarefa": 10,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso R2"
+      },
+      {
+        "tarefa": 11,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso O4"
+      },
+      {
+        "tarefa": 12,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso R1"
+      },
+      {
+        "tarefa": 13,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso I1"
+      },
+      {
+        "tarefa": 14,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso G1"
+      },
+      {
+        "tarefa": 15,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-fluxo-no-lugar.sh, caso F3"
+      },
+      {
+        "tarefa": 16,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso G2"
+      },
+      {
+        "tarefa": 17,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso U1"
+      },
+      {
+        "tarefa": 18,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao-no-lugar.sh, caso R4"
+      }
+    ],
+    "comando": "bash scripts/testa-conferir-mutacao-no-lugar.sh && bash scripts/testa-conferir-fluxo-no-lugar.sh",
+    "saida": "70 ok, 0 falha(s); 11 ok, 0 falha(s)",
+    "em": "2026-10-21",
+    "reaberturas": 2
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "9c7e5fd7d4aefbcac9a2560ac7151c4821594a46",
+      "caminhos_sujos": [
+        "docs/rainforest/estado/2026-10-21-mutacao-no-lugar.json"
+      ]
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a1bb62d1110bcd8b6",
+        "veredito": "ok",
+        "em": "2026-10-21",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/2000cb9c-f260-4626-b420-5d6adac18fc8/subagents/agent-a1bb62d1110bcd8b6.jsonl"
+      }
+    ],
+    "em": "2026-10-21",
+    "achados": 0,
+    "base": "e83d312291f1372f4a87a883924a434b5c76177d",
+    "head": "9c7e5fd7d4aefbcac9a2560ac7151c4821594a46"
+  },
+  "verificar": {
+    "status": "ok",
+    "em": "2026-10-21",
+    "comando": "bash scripts/testa-conferir-mutacao-no-lugar.sh && bash scripts/testa-conferir-fluxo-no-lugar.sh && bash scripts/testa-teto-skills.sh",
+    "saida": "ok: 70 falhou: 0; ok: 11 falhou: 0; Resultado: 21 OK, 0 FALHA; conferir-versao exit 0 versao 1.72.0",
+    "sensor_externo": "bash scripts/testa-conferir-mutacao-no-lugar.sh",
+    "head": "9c7e5fd7d4aefbcac9a2560ac7151c4821594a46"
+  },
+  "fechar": {
+    "status": "pendente",
+    "em": "2026-10-21"
+  },
+  "reaberturas": [
+    {
+      "em": "2026-10-21",
+      "de": "revisar",
+      "motivo": "achados nao bloqueantes da rodada 3 que cabem no PR: texto de sucesso afirma restauracao antes dela; alvo nao rastreado passa com status.showUntrackedFiles=no; texto do uso sem o rev-parse"
+    }
+  ]
+}

@@ -94,6 +94,7 @@ mutacao:
   existe dentro do app, é ela que evita a tarefa sair `pulada`; com `raiz:`, o
   `arquivo:` passa a ser relativo a essa pasta. Sem o campo, vale a raiz do
   repositório. `cobertura` recusa `raiz:` que não seja pasta existente.
+- **`no-lugar: sim`**: `references/mutacao-no-lugar.md`.
 - **`fixture:` nomeia qual caso de teste exercita a mutação** — arquivo, função ou
   intervalo de linhas. Não basta a **bateria** ficar vermelha: o ramo mutado tem de
   ser alcançado por um caso específico, senão o vermelho pode vir de outro lugar, e
