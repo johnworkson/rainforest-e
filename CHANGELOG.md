@@ -10,6 +10,28 @@ que existe delas é o commit de release (`git log --grep="^Versao "`), e reescre
 29 releases de memória produziria nota bonita e errada. Versão nova daqui em diante
 entra aqui no mesmo commit que sobe o `version` do `plugin.json`.
 
+## 1.71.0 — 2026-10-21
+
+- **Agente que escreve despacha com a sessão fora de repo git (#565).** Fora de repo, o harness recusa
+  `isolation: "worktree"` e a portaria recusava o agente sem ele: não sobrava caminho, e a janela principal fazia a
+  tarefa. Agora, com o cwd fora de repo, o briefing pode trazer a linha isolada `Worktree: <caminho absoluto>` de um
+  worktree linkado (`git worktree add` no repo alvo). A portaria confere que é linkado e que o caminho é o
+  toplevel dele, e passa a ler manifesto, estágio e `leve` de lá. Checkout principal, subdiretório, caminho relativo,
+  pasta que não existe ou a linha no meio da frase continuam negados. Com o cwd dentro de repo, nada muda. A
+  abertura da sessão avisa em uma linha, no bloco de dependências, quando o cwd não é repo git.
+- **Código escrito pelo shell sem fluxo aberto deixa de passar em silêncio (#564).** O hook novo
+  `aviso-fluxo-shell.cjs` roda depois de cada Bash/PowerShell da sessão principal. Se o comando deixou arquivo de
+  código novo no `git status` (fora de `docs/`) num repo com fluxo, sem fluxo aberto nem `leve`, ele avisa com
+  os arquivos e as mesmas saídas do `aviso-fluxo.cjs`. Não desfaz nada, porque o comando já rodou. Decide pelo
+  `git status` e pelos commits que a própria sessão fez, lidos no reflog do `HEAD` (código criado e commitado na
+  mesma chamada também avisa; o que chega por `pull`, `merge` ou `rebase` não), e não pela grafia do comando. Cada
+  caminho avisa uma vez por sessão, e só avisa o que difere do `HEAD` da última foto: merge, rebase ou
+  cherry-pick em conflito, `merge --squash` em andamento e o rearranjo de commits antigos (`reset`, squash, amend)
+  não avisam. Limites: `merge --squash` e commit na mesma chamada avisam o código da outra branch, e `git rm` com
+  commit na mesma chamada não avisa a remoção. Limite: código
+  criado e commitado já na primeira chamada de shell da sessão não avisa. Custo: um processo e um `git status` por chamada de shell. A chave
+  `aviso-fluxo` desliga os dois.
+
 ## 1.70.1 — 2026-10-19
 
 - **`gate-worktree` não lê mais a casa real quando a própria linha redefine a casa (#561).** Com o cwd num
