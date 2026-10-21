@@ -10,6 +10,33 @@ que existe delas é o commit de release (`git log --grep="^Versao "`), e reescre
 29 releases de memória produziria nota bonita e errada. Versão nova daqui em diante
 entra aqui no mesmo commit que sobe o `version` do `plugin.json`.
 
+## 1.70.1 — 2026-10-19
+
+- **`gate-worktree` não lê mais a casa real quando a própria linha redefine a casa (#561).** Com o cwd num
+  worktree linkado, `HOME=<W>; touch ~/../../../f` passava: o gate expandia `~` para a casa real, e o shell, para
+  o worktree, de onde `../../..` sobe para o checkout principal. A regra é ampla, não lista de grafias, e só age
+  quando a linha **usa a casa**: til em posição de expansão (`~/x`, `{~,x}`; `HEAD~1` não conta), referência a
+  `$HOME`/`$USERPROFILE`/`%USERPROFILE%`, ou `cd` sem destino (`cd`, `cd -P`, `cd >/dev/null`). Usando a casa, a
+  linha inteira cai, mesmo só lendo, quando: (a) tiradas aspas, escapes e as formas de leitura (`$HOME`,
+  `${HOME}`, `$env:HOME`, `%HOME%`, sem `=` depois), sobra menção a `HOME`, `USERPROFILE`, `HOMEDRIVE` ou
+  `HOMEPATH` (`HOME=`, `H""OME=`, `${HOME:-x}`, `export {HOME,X}=`, `$env:USERPROFILE=`); (b) há comando que
+  define variável pelo nome, que pode vir montado (`export`, `declare`, `read`, `mapfile`, `unset`, `eval`, `env`,
+  `printf -v`, `Set-Variable`, `Set-Item`, `iex`, `[Environment]::SetEnvironmentVariable`); ou (c) há execução
+  indireta (`$(`, crase, `<(`, interpretador com `-c`/`-e`/`-Command`, `source`/`.`, `[scriptblock]`, `& {`, `env:`
+  fora de leitura no PowerShell). Caixa exata no Bash, indiferente no PowerShell e no cmd. Efeito colateral aceito:
+  `export FOO=1; touch ~/x` dentro de um worktree também cai. No PowerShell, `+=`, atribuição em lista e
+  `foreach ($env:X in ...)` contam como escrita. Sem uso da casa na linha, nada muda: no Bash, til e `cd` entre
+  aspas ou em corpo de heredoc com delimitador entre aspas não contam (o commit por heredoc com `~30 tokens`
+  passa), desde que a linha não mexa na casa e todo comando dela não avalie argumento (`echo`, `cat`, `grep`,
+  `git commit`, `gh issue`...); com qualquer outro (`awk`, `find -exec`, `bash -c`), as aspas podem virar comando
+  e contam. Linha que mexe na casa nunca tem as aspas mascaradas (`printf -vHOME`, `>/dev/null HOME=x git push`).
+  `"cd"` entre aspas em posição de comando conta como `cd` sem destino, e o til fora de palavra (sem letra,
+  número, `_` ou contrabarra antes: `${U:-~}`, `${X/y/~}`) conta como uso da casa. A continuação de linha se
+  desfaz antes de todas as checagens (`HO\<quebra>ME=`, `c\<quebra>d`), e `source`/`.` como palavra em
+  qualquer posição (`>/dev/null source`, `if source`, `builtin .`) conta como execução indireta; custo aceito:
+  `git add . && cat ~/x.txt` dentro de worktree cai. `HOME=/tmp/h npm test` e `git diff HEAD~1 | grep export`
+  passam.
+
 ## 1.70.0 — 2026-10-19
 
 - **Código que muda depois do `verificar` passa de novo por revisão e verificar (#567).** O `verificar ok` grava

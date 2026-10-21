@@ -1896,6 +1896,113 @@ s552rv2 'git commit --message="corrigido em __R__/a"' 0 bp
 s552rv2 'git commit --message=x __R__/a' 2 b
 case "${R,,}" in "${CASA,,}"/*) RT='$USERPROFILE'"${R:${#CASA}}"; gate "#552 seg3: rm \$USERPROFILE/.../principal/f, do worktree, BARRA" 2 "$(b "rm $RT/f" "$WT")";; esac
 
+echo "== #561: casa redefinida na linha =="
+# Mencao a HOME/USERPROFILE/HOMEDRIVE/HOMEPATH fora de leitura, com a casa em uso na linha:
+# falha fechado, por qualquer grafia. Sem atalho de home na linha, nada muda.
+s552rv2 'HOME=__WN__; touch ~/../../../f' 2 b
+s552rv2 'read HOME <<< __WN__; touch ~/../../../f' 2 b
+s552rv2 'printf -v HOME %s __WN__; touch ~/../../../f' 2 b
+s552rv2 'export {HOME,X}=__WN__; touch ~/../../../f' 2 b
+s552rv2 'unset HOME; touch ${HOME:-__WN__}/../../../f' 2 b
+s552rv2 'HOMEPATH=__WN__; touch $HOMEDRIVE$HOMEPATH/../../../f' 2 b
+s552rv2 '$env:USERPROFILE="__WN__"; Remove-Item ~/../../../f' 2 bp
+s552rv2 '$env:home="__WN__"; Remove-Item ~/../../../f' 2 bp
+s552rv2 'home=/tmp/h; touch __WN__/f' 0 b
+s552rv2 'echo $HOME; touch __WN__/f' 0 b
+s552rv2 'touch __WN__/HOME.md' 0 b
+s552rv2 'Set-Content __WN__/f $env:USERPROFILE' 0 bp
+# Revisao de seguranca de 0c8b0991: nome com aspas ou montado, e `cd` sem argumento.
+s552rv2 'export H""OME=__WN__; touch ~/../../../f' 2 b
+s552rv2 'export $(echo HOME)=__WN__; touch ~/../../../f' 2 b
+s552rv2 'eval "HO""ME=__WN__"; touch ~/../../../f' 2 b
+s552rv2 'HOME=__WN__; cd; touch ../../../f' 2 b
+s552rv2 'HOME=__WN__; cd -- && touch ../../../f' 2 b
+s552rv2 '$env:USERPROFILE="__WN__"; cd ~; Remove-Item ../../../f' 2 bp
+s552rv2 'Set-Item "env:HO`ME" __WN__; Remove-Item ~/../../../f' 2 bp
+s552rv2 'export FOO=1; touch __WN__/f' 0 b
+s552rv2 'cd __WN__ && touch f' 0 b
+# Revisao de seguranca de a36ec012: `~` dentro de chave e execucao indireta com a casa em uso.
+s552rv2 'HOME=__WN__; touch {~,x}/../../../f' 2 b
+s552rv2 'X=HO; bash -c "${X}ME=__WN__ touch ~/../../../f"' 2 b
+s552rv2 'source ./define-casa.sh; touch ~/../../../f' 2 b
+s552rv2 '& { Remove-Item ~/../../../f }' 2 bp
+s552rv2 'Set-Item -Path ("en"+"v:US"+"ERPROFILE") __WN__; Remove-Item ~/../../../f' 2 bp
+s552rv2 'Get-Content $env:PATH; Set-Content ~/x.txt y' 0 bp
+# Custo aceito na rodada 6: ' . ' solto com a casa em uso conta como source.
+s552rv2 'git add . && cat ~/x.txt' 2 b
+# Revisao do fluxo (rodada 1): cada braco com caso que so ele barra (a rede antiga deixa passar).
+# Sem o caminho literal do worktree na linha: com ele, a rede antiga ja barra e o braco nao e medido.
+s552rv2 'HOME=$(dirname $PWD); cd -P; touch f' 2 b
+s552rv2 'HOME=$(dirname $PWD); cd >/dev/null; touch f' 2 b
+s552rv2 "python3 -c \"import os; os.environ['HO'+'ME']=os.path.dirname(os.getcwd()); os.system('touch ~/f')\"" 2 b
+s552rv2 'n=HO; n+=ME; printf -v"$n" %s ..; touch ~/f' 2 b
+s552rv2 'n=HO; n+=ME; mapfile -t $n <<< ..; touch ~/f' 2 b
+s552rv2 'V=`printf HO%sE M`; touch ~/f' 2 b
+s552rv2 'Get-ChildItem env:; Remove-Item ~/f' 2 bp
+# Revisao de seguranca de 236c810c: til colado a operador de controle ou redirecionamento.
+s552rv2 'HOME=$(dirname $PWD);echo x>~/f' 2 b
+s552rv2 'HOME=$(dirname $PWD);true&&~/x' 2 b
+# Revisao do fluxo (rodada 2): atribuicao composta, em lista e por foreach no PowerShell; bracos
+# de mapfile, substituicao e scriptblock medidos; til depois de `)`.
+s552rv2 '$env:USERPROFILE += "\..\.."; Remove-Item $env:USERPROFILE\f' 2 bp
+s552rv2 '$env:USERPROFILE, $x = "..",1; Remove-Item $env:USERPROFILE\f' 2 bp
+s552rv2 'foreach ($env:USERPROFILE in @("..")) { Remove-Item $env:USERPROFILE\f }' 2 bp
+s552rv2 "printf '%s\n' .. > m; n=HO; n+=ME; mapfile -t \$n < m; touch ~/f" 2 b
+s552rv2 'n=HO; n+=ME; echo $(date) > ~/f' 2 b
+s552rv2 "\$n='HO'+'ME'; [scriptblock]::Create('1').Invoke(); Remove-Item ~/f" 2 bp
+s552rv2 'HOME=$(dirname $PWD); case x in x)~/x;; esac' 2 b
+s552rv2 "HOME=\$(dirname \$PWD); bash -c 'touch ~/f'" 2 b
+# Til e `cd` entre aspas ou em corpo de heredoc com delimitador entre aspas nao usam a casa.
+s552rv2 'git commit -m "reduz ~30 tokens" && echo $(date)' 0 b
+s552rv2 'HOME=$(dirname $PWD); "cd"; touch f' 2 b
+s552rv2 "HOME=\$OLDPWD; echo \`sh -c 'touch ~/f'\`" 2 b
+s552rv2 "HOME=\$OLDPWD; git push --receive-pack='touch ~/f' origin" 2 b
+s552rv2 "HOME=\$OLDPWD; echo ok; git fetch --upload-pack='touch ~/f'" 2 b
+s552rv2 "HOME=\$OLDPWD; git -c core.pager='touch ~/f' log" 2 b
+s552rv2 "HOME=\$OLDPWD GIT_PAGER='touch ~/f' git log" 2 b
+s552rv2 "HOME=\$OLDPWD git log --grep '~x'" 2 b
+s552rv2 "printf -vHOME %s \$OLDPWD; git push --receive-pack='touch ~/f' origin" 2 b
+s552rv2 ">/dev/null HOME=\$OLDPWD git push --receive-pack='touch ~/f' origin" 2 b
+s552rv2 'HOME=$OLDPWD; touch ${U:-~}/f' 2 b
+s552rv2 'HOME=$OLDPWD; touch ${U:+~}/f' 2 b
+s552rv2 'HOME=$OLDPWD; touch ${U-~}/f' 2 b
+s552rv2 'HOME=$OLDPWD; touch ${U:?~}/f' 2 b
+s552rv2 'HOME=$OLDPWD; `~/x.sh`' 2 b
+s552rv2 'git commit -m "ajusta HOME ~30"' 2 b
+# Rodada 5: til por classe (fora de palavra), continuacao de linha e builtin source.
+s552rv2 'HOME=$OLDPWD; X=y; touch ${X/y/~}/f' 2 b
+s552rv2 'HOME=$OLDPWD; X=y; touch ${X//y/~}/f' 2 b
+s552rv2 'HOME=$OLDPWD; Y=a; touch ${Y#~}/f' 2 b
+s552rv2 'HOME=$OLDPWD; Y=a; touch ${Y%~}/f' 2 b
+s552rv2 "$(printf 'HO\\\nME=$OLDPWD; touch ~/f')" 2 b
+s552rv2 'builtin source ./define-casa.sh; touch ~/f' 2 b
+s552rv2 'builtin . ./define-casa.sh; touch ~/f' 2 b
+s552rv2 'git diff @~1 --stat' 0 b
+s552rv2 'git log --oneline HEAD~3..HEAD' 0 b
+# Rodada 6: checagens sobre o texto sem continuacao de linha; source/. em qualquer palavra.
+s552rv2 "$(printf 'HOME=$OLDPWD; touch ${HO\\\nME}/f')" 2 b
+s552rv2 "$(printf 'HOME=$OLDPWD; touch $HO\\\nME/f')" 2 b
+s552rv2 "$(printf 'HOME=$OLDPWD; c\\\nd; touch f')" 2 b
+s552rv2 '>/dev/null source ./x.sh; touch ~/f' 2 b
+s552rv2 '2>/dev/null . ./x.sh; touch ~/f' 2 b
+s552rv2 'if source ./x.sh; then touch ~/f; fi' 2 b
+s552rv2 'time source ./x.sh; touch ~/f' 2 b
+s552rv2 "$(printf 'echo a\nsource ./x.sh\ntouch ~/f')" 2 b
+s552rv2 'git add . && git status' 0 b
+s552rv2 'ls ~/.config' 0 b
+s552rv2 'echo "~" ; echo $(date)' 0 b
+s552rv2 "$(printf 'git commit -m "$(cat <<%sEOF%s\nfix: reduz ~30 tokens e o agente faz cd\nEOF\n)"' "'" "'")" 0 b
+s552rv2 'gh issue create --title x --body "ver ~/x" && echo $(date)' 0 b
+# Revisao de seguranca de 371a6b6b: so comando que nao avalia argumento deixa mascarar as aspas.
+s552rv2 "HOME=\$(dirname \$PWD); awk 'BEGIN{system(\"touch ~/f\")}'" 2 b
+s552rv2 "HOME=\$(dirname \$PWD); find . -name x -exec sh -c 'touch ~/f' \\;" 2 b
+s552rv2 "HOME=\$(dirname \$PWD); git -c alias.x='!touch ~/f' x" 2 b
+# Til fora de posicao de expansao nao e a casa.
+s552rv2 'git diff HEAD~1 | grep -n "export"' 0 b
+s552rv2 'echo "$(git rev-parse HEAD~1)"' 0 b
+s552rv2 'git diff HEAD~1 | while read l; do echo $l; done' 0 b
+s552rv2 'git diff HEAD~1 | Select-String env' 0 bp
+
 echo "== #552 D6: pai inexistente =="
 # Com cwd no proprio principal a rede nao age (D3): so a lista decide, e ela precisa
 # achar o repositorio subindo ate um diretorio que existe.

@@ -69,6 +69,7 @@ const CLIS_QUE_ESCREVEM = require(path.join(__dirname, "lib", "clis-que-escrevem
 // #530 (D4, D6): a palavra de comando como o bash a le, e o corpo de cada
 // substituicao de comando (crase e `$(...)`), para o gate conferir o que roda la dentro.
 const { normalizarComando, corposDeSubstituicao, expandirChaves } = require(path.join(__dirname, "lib", "palavra-bash.cjs"));
+const { mascararCorposDeHeredoc } = require(path.join(__dirname, "lib", "heredoc.cjs"));
 const {
   tokensComAspas, ehComando, WRAPPERS_QUE_REPASSAM, posicaoDeComando, textoAPartir, desempacotarWrapperDeString,
 } = require(path.join(__dirname, "lib", "tokens-comando.cjs"));
@@ -1674,6 +1675,93 @@ function caminhosCitados(texto, ehPowerShell) {
   return achados.map((c) => c.replace(/^FileSystem::/i, ""));
 }
 
+// Casa redefinida na propria linha (#561): com `HOME=<W>; touch ~/../f` o shell expande o atalho
+// para outro lugar, e a rede leria a casa real. Tiradas as formas de leitura (`$NOME`, `${NOME}`,
+// `$env:NOME`, `${env:NOME}`, `%NOME%`, sem `=` depois), qualquer mencao aos quatro nomes com a
+// casa em uso na linha falha fechado. Regra ampla, nao lista de grafias. Caixa exata no Bash,
+// indiferente no PowerShell e no cmd. A mencao se procura sem aspas nem escapes (`H""OME=`), e,
+// com a casa em uso, comando que define variavel pelo nome (o nome pode vir montado:
+// `export $(echo HOME)=`, `eval`) tambem falha fechado, assim como execucao indireta
+// (substituicao, interpretador com `-c`, `source`, `env:` fora de leitura no PowerShell).
+// O til em posicao de expansao (`~/x`, `{~,x}`, `=~`; `HEAD~1` nao) e `cd` sem destino usam a
+// casa. Ofuscacao deliberada fora dessas classes fica fora do modelo de ameaca: a trava protege
+// contra o engano da sessao.
+const NOMES_DA_CASA = "HOME|USERPROFILE|HOMEDRIVE|HOMEPATH";
+const DEFINE_VARIAVEL = /(^|[\s;&|(`{])(export|declare|typeset|local|readonly|read|mapfile|readarray|unset|eval|env|Set-Variable|New-Variable|sv|nv|Set-Item|si|Invoke-Expression|iex)(?=$|[\s;&|)}])|(^|[\s;&|(`{])printf\s+-v|(^|[\s;&|(`{])(Set-Item|New-Item|Set-Content|Remove-Item|Clear-Item|Rename-Item|Copy-Item|si|ni|sc|ri)\s+(-Path\s+|-LiteralPath\s+)?['"]?env:|\[(System\.)?Environment\]::SetEnvironmentVariable/i;
+// `source`/`.` como palavra em qualquer posicao (depois de `if`, `time`, `>/dev/null`, `builtin`,
+// quebra de linha), procurado no texto sem aspas nem escapes (`\source`).
+const FONTE_DE_SCRIPT = /(^|[^\w.\/$-])(source|\.)(?=\s)/;
+const EXECUCAO_INDIRETA = /\$\(|<\(|>\(|(^|[;&|(`{]\s*)(source|\.)(?=\s)|(^|[\s;&|(`{])(bash|sh|zsh|dash|ksh|pwsh|powershell|cmd|node|python3?|perl|ruby)(\.exe)?(\s+[^\s;&|]+)*?\s+(-\w*c|-e|--eval|-Command|-EncodedCommand|-enc|\/c)(?=$|\s)|\[scriptblock\]|\$ExecutionContext|(^|[\s;|(])&\s*[{($'"]/i;
+// Bash: aspas simples, e duplas sem `$` nem crase, nao expandem o til nem rodam `cd`; o corpo de
+// heredoc com delimitador entre aspas e dado. Desbalanceado: nao mascara (falha fechado).
+function mascaraAspasBash(texto) {
+  let saida = "";
+  for (let i = 0; i < texto.length; i += 1) {
+    const c = texto[i];
+    if (c === "\\") { saida += texto.slice(i, i + 2); i += 1; continue; }
+    if (c !== "'" && c !== '"') { saida += c; continue; }
+    let j = i + 1;
+    while (j < texto.length && texto[j] !== c) j += c === '"' && texto[j] === "\\" ? 2 : 1;
+    if (j >= texto.length) return texto;
+    const dentro = texto.slice(i + 1, j);
+    saida += c === '"' && /[$`]/.test(dentro) ? texto.slice(i, j + 1) : c + " ".repeat(j - i - 1) + c;
+    i = j;
+  }
+  return saida;
+}
+// Corpo de heredoc que e dado, inclusive dentro de `"$(cat <<'EOF' ...)"` (a busca do operador
+// nao entra em aspas duplas: a aspa que abre a substituicao sai so na copia da busca).
+function mascaraHeredocsBash(texto) {
+  const busca = mascararCorposDeHeredoc(texto.replace(/"\$\(/g, " $("));
+  let saida = "";
+  for (let i = 0; i < texto.length; i += 1) {
+    const aspaDaSubstituicao = texto[i] === '"' && texto.startsWith("$(", i + 1);
+    saida += busca[i] === " " && texto[i] !== "\n" && !aspaDaSubstituicao ? " " : texto[i];
+  }
+  return saida;
+}
+// So comandos que nao avaliam os argumentos deixam mascarar as aspas: qualquer outro (`awk`,
+// `find -exec`, `bash -c`, alias de git com `!`) pode transformar o texto entre aspas em comando.
+const COMANDOS_INERTES = new Set(["echo", "printf", "cat", "grep", "rg", "ls", "head", "tail", "wc", "sort", "uniq", "true", "false", "date", "pwd", "touch", "mkdir", "cp", "mv", "rm"]);
+const SUBCOMANDOS_INERTES = { git: /^(commit|log|diff|show|status|add|push|fetch|branch|rev-parse|merge-base|tag)$/, gh: /^(pr|issue)$/ };
+function soComandosInertes(texto) {
+  const palavras = [...texto.matchAll(/(?:^|[;&|(\n]|\$\()\s*((?:[A-Za-z_]\w*=\S*\s+)*)([^\s;&|()<>]+)(?:\s+([^\s;&|()<>]+))?/g)];
+  return palavras.every((m) => {
+    const cmd = m[2], sub = m[3] || "";
+    if (SUBCOMANDOS_INERTES[cmd]) return SUBCOMANDOS_INERTES[cmd].test(sub);
+    return COMANDOS_INERTES.has(cmd) && !(cmd === "printf" && sub === "-v");
+  });
+}
+// Escrita na variavel: `=`, atribuicao composta (`+=`, `??=`), lista (`$env:X, $y =`) e `foreach ($env:X in`.
+const ESCRITA_DEPOIS = String.raw`(?!\s*(?:[-+*/%]|\?\?)?=(?!=)|\s*,|\s+in\b)`;
+function casaRedefinida(comando, ehPowerShell) {
+  const usaCasa = new RegExp(`[$%]\\{?(?:env:)?(?:${NOMES_DA_CASA})`, "i");
+  // `cd` sem destino: so opcoes (`-P`, `--`), e depois fim, separador, redirecionamento,
+  // comentario ou quebra de linha.
+  const cdSemArgumento = /(^|[\s;&|(`{])(cd|chdir|pushd)([ \t]+-[-\w@]*)*[ \t]*($|[;&|)}#<>\r\n]|\d>)/;
+  // Til fora de palavra: depois de letra, numero, `_` ou contrabarra ele nao expande (`HEAD~1`);
+  // qualquer outro vizinho (`${X/y/~}`, `${U:-~}`) e posicao de expansao, sem lista de grafias.
+  const tilDeCasa = /(^|[^\w\\])~/;
+  // Continuacao de linha some antes de qualquer checagem (`HO\<LF>ME=`, `${HO\<LF>ME}`, `c\<LF>d`).
+  const junto = comando.replace(ehPowerShell ? /`\r?\n/g : /\\\r?\n/g, "");
+  const semAspas = junto.replace(ehPowerShell ? /["'`]/g : /["'\\]/g, "");
+  const leitura = new RegExp(`(?:\\$\\{(?:env:)?(?:${NOMES_DA_CASA})\\}|\\$(?:env:)?(?:${NOMES_DA_CASA})\\b|%(?:${NOMES_DA_CASA})%)${ESCRITA_DEPOIS}`, ehPowerShell ? "gi" : "g");
+  const resto = semAspas.replace(leitura, " ");
+  const mencao = new RegExp(`\\b(?:${NOMES_DA_CASA})\\b`, ehPowerShell ? "i" : "");
+  // Linha que mexe na casa nunca e inerte: a lista de comandos inertes vira lista de grafias
+  // (`printf -vHOME`, `>/dev/null HOME=x git push`), o defeito que derrubou a #552.
+  const mexeNaCasa = DEFINE_VARIAVEL.test(semAspas) || mencao.test(resto);
+  const mascarado = ehPowerShell ? comando : mascaraAspasBash(mascaraHeredocsBash(junto));
+  const vivo = ehPowerShell || mexeNaCasa || !soComandosInertes(mascarado) ? junto : mascarado;
+  if (!tilDeCasa.test(vivo) && !usaCasa.test(vivo) && !cdSemArgumento.test(vivo.replace(/["'\\]/g, ""))) return false;
+  if (mexeNaCasa) return true;
+  if (EXECUCAO_INDIRETA.test(junto)) return true;
+  if (FONTE_DE_SCRIPT.test(semAspas)) return true;
+  if (!ehPowerShell && comando.includes("`")) return true;
+  if (ehPowerShell && /env:/i.test(resto.replace(new RegExp(String.raw`\$\{?env:\w+\}?` + ESCRITA_DEPOIS, "gi"), " "))) return true;
+  return false;
+}
+
 /**
  * Alvos da rede (D1-D5): um `{dir: <principal>, incerto: true}` por segmento que cita
  * caminho do principal fora de leitura, ou que roda com cwd no principal. Vazio
@@ -1728,8 +1816,8 @@ function alvosDaRede(comando, cwd, ehPowerShell) {
   // `p.cru` e o texto ORIGINAL da palavra (o `$` de `$HOME` conta); `p.limpo` vem do texto com o
   // atalho de home expandido, so para achar e resolver o caminho `c`.
   // O atalho de home no INICIO da palavra (`$HOME/...`, `${env:USERPROFILE}\...`) nao conta como
-  // expansao: o valor e o da casa. HOME redefinido na propria linha fica fora de escopo (variavel
-  // sem o literal do caminho, D3). No meio (`<W>/$HOME/f`) conta.
+  // expansao: o valor e o da casa. HOME redefinido na propria linha ja caiu antes, em
+  // `casaRedefinida` (#561). No meio (`<W>/$HOME/f`) conta.
   const palavraQueSobe = (p, base, c) => {
     if (/[$`]/.test(p.cru.replace(CASA_NO_INICIO, (m, aspa) => aspa))) return true;
     // Com chave (Bash), cada alternativa da expansao conta, e mais a checagem da chave; expansao
@@ -1761,6 +1849,7 @@ function alvosDaRede(comando, cwd, ehPowerShell) {
   };
   const citaProtegido = (texto, base) => caminhosCitados(texto, ehPowerShell).some((c) => protegido(c, base, texto));
   const alvo = [{ dir: repo.principal, incerto: true }];
+  if (casaRedefinida(comando, ehPowerShell)) return alvo;
   // Segmentacao nao confiavel (D2): a linha inteira e um segmento so, e nada e leitura.
   // Bash com `\` + quebra: colar as linhas erra quando as contrabarras sao pares (`ls \\` + quebra +
   // `rm <P>/f`), e nao colar erra a continuacao; a linha toda vira um segmento so.
