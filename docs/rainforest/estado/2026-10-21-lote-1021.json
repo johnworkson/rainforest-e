@@ -1,0 +1,105 @@
+{
+  "slug": "2026-10-21-lote-1021",
+  "titulo": "2026-10-21-lote-1021",
+  "criado_em": "2026-10-21",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-21-lote-1021.md",
+    "aprovado_por": "usuario: recomendado (Q1-Q3)",
+    "em": "2026-10-21"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-21-lote-1021.md",
+    "tarefas": 5,
+    "paralelas": [
+      1,
+      4
+    ],
+    "em": "2026-10-21"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-21",
+    "tarefas_ok": 6,
+    "tarefas": 6,
+    "comando": "bash scripts/testa-plugin-codex.sh",
+    "saida": "ok ancora corpo fechar: 16065 bytes sha256 5f772f36...; rc=0",
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-publicar-branch.sh g11 g12"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-fluxo.sh secao 18 (#575)"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-fluxo.sh secao 18 (#571)"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "vermelho",
+        "fixture": "testa-ci-shards.sh workflow real"
+      },
+      {
+        "tarefa": 5,
+        "resultado": "n/a",
+        "motivo": "tarefa so reescreve doc e versao e re-mede a ancora do corpo da skill"
+      },
+      {
+        "tarefa": 6,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-fluxo.sh secao 18 junction"
+      }
+    ],
+    "em": "2026-10-21",
+    "reaberturas": 1
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "cb6dd732f56c57bba3274e23e03e6de73bf6a451",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "af3aba1bbb386d145",
+        "veredito": "ok",
+        "em": "2026-10-21",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/2000cb9c-f260-4626-b420-5d6adac18fc8/subagents/agent-af3aba1bbb386d145.jsonl"
+      }
+    ],
+    "achados": 0,
+    "em": "2026-10-21",
+    "base": "46d1574fcfffaf4fcce8d6e8e8aef4efbd602001",
+    "head": "cb6dd732f56c57bba3274e23e03e6de73bf6a451"
+  },
+  "verificar": {
+    "status": "ok",
+    "comando": "bash scripts/testa-plugin-codex.sh; bash scripts/testa-conferir-fluxo.sh; bash scripts/testa-publicar-branch.sh; bash scripts/testa-ci-shards.sh; bash scripts/testa-varrer-baterias.sh; bash scripts/testa-teto-skills.sh; node scripts/conferir-versao.cjs",
+    "saida": "testa-plugin-codex ok ancora corpo fechar 16065 bytes, exit 0; testa-conferir-fluxo ok: 132 falhou: 0; testa-publicar-branch ok: 60 falhou: 0; testa-ci-shards shards=3 carga_max=1181s teto=1410s ok: 5 falhou: 0; testa-varrer-baterias TODOS OS TESTES PASSARAM; testa-teto-skills 21 OK, 0 FALHA; conferir-versao ok versao 1.73.0",
+    "sensor_externo": "bash scripts/testa-ci-shards.sh",
+    "em": "2026-10-21",
+    "head": "cb6dd732f56c57bba3274e23e03e6de73bf6a451"
+  },
+  "fechar": {
+    "status": "pendente",
+    "em": "2026-10-21"
+  },
+  "reaberturas": [
+    {
+      "em": "2026-10-21",
+      "de": "verificar",
+      "motivo": "CI do PR 579: ancora binaria do corpo da skill fechar em contrato-plugin-codex.cjs nao re-medida apos a linha do exit 8"
+    }
+  ]
+}
