@@ -236,6 +236,31 @@ async function main() {
     const fi = frase({ em: 1, tipo: 'identidade_divergente', pasta: 'trabalho', motivo: 'a pasta trabalho está em casa (conta trabalho) mas o login dela é de outra conta', manual: false });
     afirma('identidade_divergente vira aviso com o motivo',
       /^Conta: a pasta trabalho está em casa/.test(fi), 'frase: ' + fi);
+    // #584: o aviso da pasta manual no limite diz a pasta, a conta em uso, o quanto e como devolver.
+    const fml = frase({ em: 1, tipo: 'manual_no_limite', pasta: 'trabalho', de: 'pessoal', para: 'team', motivo: 'seven_day de pessoal em 100%', manual: true, voltaEm: '2026-10-25T11:00:00Z' });
+    afirma('manual_no_limite diz a pasta, a conta, o percentual e o comando que devolve, com --pasta',
+      fml.includes('pasta trabalho') && fml.includes('conta pessoal') && fml.includes('100%') && fml.includes('/conta trabalho --pasta trabalho'), 'frase: ' + fml);
+    const fmls = frase({ em: 1, tipo: 'manual_no_limite', pasta: 'trabalho', de: 'pessoal', para: 'team', motivo: 'seven_day de pessoal em 100%', manual: true, voltaEm: '2026-10-25T11:00:00Z', causa: 'sem_login_guardado' });
+    afirma('manual_no_limite sem login guardado manda refazer o /login, não o /conta',
+      fmls.includes('/login da conta trabalho') && !fmls.includes('/conta trabalho --pasta'), 'frase: ' + fmls);
+    const frm = frase({ em: 1, tipo: 'reconciliado', pasta: 'trabalho', de: 'team', para: 'pessoal', motivo: 'estado alinhado ao login da pasta; sem_login_guardado', manual: true });
+    afirma('reconciliado para fora de casa sem login guardado diz para refazer o /login da casa',
+      frm.includes('fora de casa') && frm.includes('/login da conta trabalho') && !frm.includes('sem_login_guardado'), 'frase: ' + frm);
+    const frna = frase({ em: 1, tipo: 'reconciliado', pasta: 'trabalho', de: 'pessoal', para: 'team', motivo: 'não consegui arquivar o login guardado antigo (EPERM)', manual: false });
+    afirma('reconciliado que não arquivou o órfão avisa que a próxima troca falha',
+      frna.includes('Não consegui arquivar') && frna.includes('EPERM') && frna.includes('próxima troca'), 'frase: ' + frna);
+    // #585: o reconciliado diz a pasta, a conta de antes e a de agora, e que nenhum login foi movido.
+    const frc = frase({ em: 1, tipo: 'reconciliado', pasta: 'trabalho', de: 'pessoal', para: 'team', motivo: 'login guardado antigo arquivado em estacionado-trabalho.orfao-20261023-101500.json', manual: false });
+    afirma('reconciliado diz a pasta, as duas contas, que nada foi movido e o arquivo arquivado',
+      frc.includes('pasta trabalho') && frc.includes('conta pessoal') && frc.includes('conta trabalho')
+        && frc.includes('nenhum login foi movido') && frc.includes('estacionado-trabalho.orfao-20261023-101500.json'), 'frase: ' + frc);
+    // Revisão 2: nova tentativa de arquivar (de === para) não diz que o estado divergia.
+    const frt = frase({ em: 1, tipo: 'reconciliado', pasta: 'trabalho', de: 'team', para: 'team', motivo: 'login guardado antigo arquivado em estacionado-trabalho.orfao-20261023-103000.json', manual: false });
+    afirma('nova tentativa que arquivou o órfão diz o arquivo e que a troca volta a funcionar',
+      frt.includes('estacionado-trabalho.orfao-20261023-103000.json') && frt.includes('volta a funcionar') && !frt.includes('o estado dizia'), 'frase: ' + frt);
+    const frtf = frase({ em: 1, tipo: 'reconciliado', pasta: 'trabalho', de: 'team', para: 'team', motivo: 'não consegui arquivar o login guardado antigo (EBUSY)', manual: false });
+    afirma('nova tentativa que falhou de novo diz o código e que a próxima troca falha',
+      frtf.includes('ainda não consegui arquivar') && frtf.includes('EBUSY') && frtf.includes('próxima troca') && !frtf.includes('o estado dizia'), 'frase: ' + frtf);
     afirma('falhou comum segue dizendo que a troca foi desfeita',
       frase({ em: 1, tipo: 'falhou', pasta: 'trabalho', motivo: 'saida_ocupada' }) === 'Conta: a troca da pasta trabalho foi desfeita (saida_ocupada).');
     const fnd = frase({ em: 1, tipo: 'falhou', pasta: 'trabalho', de: 'team', para: 'pessoal', motivo: 'servidor confirmou a@exemplo.invalid, esperado b@exemplo.invalid; desfeito=false' });

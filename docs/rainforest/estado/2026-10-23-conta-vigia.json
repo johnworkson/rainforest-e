@@ -1,0 +1,125 @@
+{
+  "slug": "2026-10-23-conta-vigia",
+  "titulo": "2026-10-23-conta-vigia",
+  "criado_em": "2026-10-23",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-23-conta-vigia.md",
+    "em": "2026-10-23"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-23-conta-vigia.md",
+    "tarefas": 6,
+    "paralelas": [
+      1,
+      5
+    ],
+    "em": "2026-10-23"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-23",
+    "tarefas_ok": 6,
+    "tarefas": 6,
+    "carimbos": [
+      {
+        "tarefa": 5,
+        "hash_base": "da7f7d2ff863ac41b773059976082a88d558b8f3",
+        "iteracao": 1,
+        "sessao": "21bbb906-04da-49d6-81e0-c50cb1c59dfc",
+        "ts": "2026-10-24T01:24:08.702Z"
+      }
+    ],
+    "em": "2026-10-24",
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-conta-decidir.cjs, caso \"pasta manual com a conta em uso a 100% na semana devolve avisar\""
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-conta.sh, secao \"#584: pasta manual no limite\", caso \"segunda rodada com o mesmo estouro nao registra outro manual_no_limite\""
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-conta.sh, secao \"#585: estado segue o login\", caso \"trocar trabalho com o login ja da conta team nao move credencial\""
+      },
+      {
+        "tarefa": 4,
+        "resultado": "vermelho",
+        "fixture": "testa-conta.sh, secao \"#585: estado segue o login\", caso \"depois de reconciliar para casa a troca automatica seguinte nao falha com saida_ocupada\""
+      },
+      {
+        "tarefa": 5,
+        "resultado": "vermelho",
+        "fixture": "testa-run-vigia-claude.sh, secao \"5. -Teste\", caso \"o claude recebeu --permission-mode dontAsk e nao recebeu --dangerously-skip-permissions\""
+      },
+      {
+        "tarefa": 6,
+        "resultado": "n/a",
+        "motivo": "tarefa so escreve doc e versao; nao ha comportamento a inverter"
+      }
+    ],
+    "comando": "node scripts/testa-conta-decidir.cjs; bash scripts/testa-conta.sh; node hooks/testa-mod-conta.cjs; bash scripts/testa-run-vigia-claude.sh; bash scripts/testa-versao.sh",
+    "saida": "36 ok; ok: 66 falhou: 0; 32 ok; 28 ok; testa-versao ok: 5 falhou: 0",
+    "reaberturas": 1,
+    "mutacao_extra_revisao2": "causa, catch, retenta, resetnull, frase: as 5 vermelhas (testa-conta.sh / testa-mod-conta.cjs)"
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "ba47060caba74b284bd209b829f0b1a5e092dac2",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a839bc82dd7dedf5f",
+        "veredito": "ok",
+        "em": "2026-10-24",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/21bbb906-04da-49d6-81e0-c50cb1c59dfc/subagents/agent-a839bc82dd7dedf5f.jsonl"
+      }
+    ],
+    "em_voo": [],
+    "em": "2026-10-24",
+    "achados": 0,
+    "base": "458a18a172b0352f7400fedb20e9305061e2264f",
+    "head": "ba47060caba74b284bd209b829f0b1a5e092dac2"
+  },
+  "verificar": {
+    "status": "ok",
+    "em": "2026-10-24",
+    "comando": "node scripts/testa-conta-decidir.cjs; bash scripts/testa-conta.sh; node hooks/testa-mod-conta.cjs; bash scripts/testa-run-vigia-claude.sh; node scripts/conferir-versao.cjs; bash scripts/testa-plugin-codex.sh; bash scripts/testa-versao.sh",
+    "saida": "36 ok, 0 falha(s); ok: 66 falhou: 0; 32 ok, 0 falha(s); 28 ok, 0 falha(s); conferir-versao rc=0 (1.74.0); testa-plugin-codex rc=0; testa-versao ok: 5 falhou: 0; tarefa 5 entrada real: claude -p --model haiku com os argumentos do -Teste, mark_chat_as_read -> Permission to use mcp__whatsapp__mark_chat_as_read has been denied because Claude Code is running in dont ask mode; list_chats limite 1 -> devolveu conversa (status@broadcast)",
+    "sensor_externo": "bash scripts/testa-conta.sh",
+    "head": "e575bfadede1a77bf39cb6a78edcfb84084cb657"
+  },
+  "fechar": {
+    "status": "pendente",
+    "em": "2026-10-24"
+  },
+  "reaberturas": [
+    {
+      "em": "2026-10-23",
+      "de": "revisar",
+      "motivo": "revisao 2: orfao que nao arquivou nao e retentado, dedupe com resets_at ausente, comentario de causa, testes do catch e da causa"
+    },
+    {
+      "em": "2026-10-24",
+      "de": "revisar",
+      "motivo": "README do achado 2 da revisao 3 entrou depois do revisar"
+    },
+    {
+      "em": "2026-10-24",
+      "de": "verificar",
+      "motivo": "CI do PR 588: badge de versao do README ficou em 1.73.1 (testa-versao.sh)"
+    }
+  ]
+}

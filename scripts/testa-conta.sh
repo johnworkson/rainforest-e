@@ -420,7 +420,8 @@ caso_n() {
 afirma "(n) leitura de uso de 3 h atrás não decide troca" caso_n
 
 # (o) o estado diz "em casa" mas a pasta trabalho tem o login da conta pessoal (um desfazer que
-# falhou deixa isso): status NÃO reescreve contas.team, nem o estado, e grava identidade_divergente.
+# falhou deixa isso): status NÃO reescreve contas.team. Desde a #585 o estado segue o login: com a
+# trava, o status põe a pasta na conta pessoal (manual) e grava reconciliado, não identidade_divergente.
 C_O="$(novo_caso o nao)"
 node "$RAIZ/ajustar.cjs" divergente "$C_O"
 EST_O="$C_O/dados/contas/estado.json"
@@ -430,10 +431,11 @@ RC_O=0
 cli "$C_O" status > "$RAIZ/o.txt" 2>&1 || RC_O=$?
 caso_o() {
   [ "$RC_O" -eq 0 ] && [ "$(ler "$EST_O" contas.team.email)" = team@exemplo.invalid ] \
-    && cmp -s "$EST_O" "$RAIZ/estado-o-antes.json" \
-    && grep -qF '"tipo":"identidade_divergente"' "$EV_O" && grep -qF '"pasta":"trabalho"' "$EV_O"
+    && [ "$(ler "$EST_O" pastas.trabalho.conta)" = pessoal ] && [ "$(ler "$EST_O" pastas.trabalho.manual)" = true ] \
+    && grep -qF '"tipo":"reconciliado","pasta":"trabalho"' "$EV_O" \
+    && ! grep -qF '"tipo":"identidade_divergente"' "$EV_O"
 }
-afirma "(o) status não sobrescreve o e-mail registrado e grava identidade_divergente" caso_o
+afirma "(o) status não sobrescreve o e-mail registrado e alinha o estado ao login (reconciliado)" caso_o
 
 # (p) o mesmo refresh token na pasta trabalho e na reserva-team: o vigia grava credencial_duplicada
 # e não move nada (a team está a 97% na semana: sem a checagem, trocaria); o status avisa.
@@ -1027,6 +1029,233 @@ caso_p2() {
     && [ "$(sha256sum "$C_P2/trabalho/.claude.json" | cut -d' ' -f1)" = "$HASH_TR_P2" ]
 }
 afirma "(p2) duas pastas: trocar trabalho --pasta pessoal grava o oauthAccount no .claude.json de dentro da pasta pessoal; o de trabalho fica igual" caso_p2
+
+# #584: pasta manual no limite. A pasta trabalho foi trocada na mão para a pessoal (manual, sem
+# travouPor) e a pessoal chegou a 100% da semana. O vigia não move nada (D8), mas registra
+# manual_no_limite uma vez por estouro: a segunda rodada com o mesmo resets_at não registra outro, e
+# um resets_at novo (estouro seguinte) registra.
+echo "== #584: pasta manual no limite =="
+C_ML="$(novo_caso ml sim)"
+node "$RAIZ/ajustar.cjs" trocado "$C_ML"
+node -e "const fs=require('fs');const a=process.argv[1];const e=JSON.parse(fs.readFileSync(a,'utf8'));e.pastas.trabalho.manual=true;e.pastas.trabalho.travouPor=null;fs.writeFileSync(a,JSON.stringify(e))" "$C_ML/dados/contas/estado.json"
+EV_ML="$C_ML/dados/contas/eventos.jsonl"
+HASH_ML="$(sha256sum "$C_ML/trabalho/.claude/.credentials.json" | cut -d' ' -f1)"
+LIMITE_ML='{"tokens":{"falso-pessoal-pasta":{"uso7":100,"reset7":"2026-10-25T11:00:00.000Z"},"falso-pessoal-reserva":{"uso7":100,"reset7":"2026-10-25T11:00:00.000Z"}}}'
+node "$RAIZ/derivar.cjs" "$RAIZ/mapa.json" "$RAIZ/mapa-ml.json" "$LIMITE_ML"
+node "$RAIZ/derivar.cjs" "$RAIZ/mapa.json" "$RAIZ/mapa-ml2.json" "${LIMITE_ML//2026-10-25/2026-11-01}"
+# O mesmo estouro relido com o resets_at 1 ms adiante (a leitura volta com microssegundos).
+node "$RAIZ/derivar.cjs" "$RAIZ/mapa.json" "$RAIZ/mapa-ml1ms.json" "${LIMITE_ML//11:00:00.000Z/11:00:00.001Z}"
+iniciar_servidor "$RAIZ/mapa-ml.json" "$RAIZ/porta-ml.txt"
+API_ML="$API"
+iniciar_servidor "$RAIZ/mapa-ml2.json" "$RAIZ/porta-ml2.txt"
+API_ML2="$API"
+iniciar_servidor "$RAIZ/mapa-ml1ms.json" "$RAIZ/porta-ml1ms.txt"
+API_ML1MS="$API"
+API="$API_ML"
+cli "$C_ML" vigiar > "$RAIZ/ml1.txt" 2>&1 || true
+cli "$C_ML" vigiar > "$RAIZ/ml2.txt" 2>&1 || true
+API="$API_ML1MS"
+rm -f "$C_ML/dados/contas/uso-cache.json"
+cli "$C_ML" vigiar > "$RAIZ/ml2b.txt" 2>&1 || true
+contar_ml() { grep -c '"tipo":"manual_no_limite"' "$EV_ML" 2>/dev/null || true; }
+N_ML1="$(contar_ml)"
+API="$API_ML2"
+# A leitura de uso fica em cache por minutos: sem apagá-lo, a rodada seguinte relê o estouro velho.
+rm -f "$C_ML/dados/contas/uso-cache.json"
+cli "$C_ML" vigiar > "$RAIZ/ml3.txt" 2>&1 || true
+API="$API_PRINCIPAL"
+N_ML2="$(contar_ml)"
+afirma "#584: a primeira rodada registra manual_no_limite da pasta trabalho" \
+  grep -qF '"tipo":"manual_no_limite","pasta":"trabalho"' "$EV_ML"
+afirma "segunda rodada com o mesmo estouro nao registra outro manual_no_limite" test "$N_ML1" = 1
+afirma "#584: com login guardado da casa, o aviso não marca sem_login_guardado" \
+  test "$(grep -c 'sem_login_guardado' "$EV_ML" || true)" = 0
+afirma "#584: resets_at novo (estouro seguinte) registra outro" test "$N_ML2" = 2
+afirma "#584: o vigia não move credencial nem tira a pasta da conta pessoal" \
+  test "$(sha256sum "$C_ML/trabalho/.claude/.credentials.json" | cut -d' ' -f1)" = "$HASH_ML" -a "$(ler "$C_ML/dados/contas/estado.json" pastas.trabalho.conta)" = pessoal
+afirma "#584: a saída do vigia diz avisar trabalho" contem "$(cat "$RAIZ/ml1.txt")" "avisar trabalho: seven_day de pessoal em 100%"
+
+# Sem login guardado da casa (o /login por cima o apagou), o aviso leva causa sem_login_guardado: é
+# ela que faz o mod mandar refazer o /login em vez do /conta.
+C_ML3="$(novo_caso ml3 sim)"
+node "$RAIZ/ajustar.cjs" trocado "$C_ML3"
+node -e "const fs=require('fs');const a=process.argv[1];const e=JSON.parse(fs.readFileSync(a,'utf8'));e.pastas.trabalho.manual=true;e.pastas.trabalho.travouPor=null;fs.writeFileSync(a,JSON.stringify(e))" "$C_ML3/dados/contas/estado.json"
+rm -f "$C_ML3/dados/contas/estacionado-trabalho.json"
+API="$API_ML"
+cli "$C_ML3" vigiar > "$RAIZ/ml3b.txt" 2>&1 || true
+API="$API_PRINCIPAL"
+afirma "#584: sem login guardado da casa, o manual_no_limite leva causa sem_login_guardado" \
+  grep -qE '"tipo":"manual_no_limite","pasta":"trabalho".*"causa":"sem_login_guardado"' "$C_ML3/dados/contas/eventos.jsonl"
+
+# Revisão 2: estouro sem resets_at (null). Duas rodadas seguem sendo o mesmo estouro: um aviso só.
+C_ML4="$(novo_caso ml4 sim)"
+node "$RAIZ/ajustar.cjs" trocado "$C_ML4"
+node -e "const fs=require('fs');const a=process.argv[1];const e=JSON.parse(fs.readFileSync(a,'utf8'));e.pastas.trabalho.manual=true;e.pastas.trabalho.travouPor=null;fs.writeFileSync(a,JSON.stringify(e))" "$C_ML4/dados/contas/estado.json"
+node "$RAIZ/derivar.cjs" "$RAIZ/mapa.json" "$RAIZ/mapa-mlnull.json" '{"tokens":{"falso-pessoal-pasta":{"uso7":100,"reset7":null},"falso-pessoal-reserva":{"uso7":100,"reset7":null}}}'
+iniciar_servidor "$RAIZ/mapa-mlnull.json" "$RAIZ/porta-mlnull.txt"
+cli "$C_ML4" vigiar > "$RAIZ/ml4a.txt" 2>&1 || true
+rm -f "$C_ML4/dados/contas/uso-cache.json"
+cli "$C_ML4" vigiar > "$RAIZ/ml4b.txt" 2>&1 || true
+API="$API_PRINCIPAL"
+afirma "#584: estouro sem resets_at registra um manual_no_limite só, em duas rodadas" \
+  test "$(grep -c '"tipo":"manual_no_limite"' "$C_ML4/dados/contas/eventos.jsonl" 2>/dev/null || true)" = 1
+
+# #585: /login feito fora do conta.cjs. O estado diz trabalho na conta pessoal (troca manual), mas
+# a pasta recebeu um login novo da team (o /login grava .credentials.json e o oauthAccount). O
+# estacionado-trabalho.json ainda guarda o login antigo da team. O estado tem de seguir o login sem
+# mover credencial, e o estacionado órfão é arquivado (sem isso a próxima troca falha com
+# saida_ocupada).
+echo "== #585: estado segue o login =="
+node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));m.tokens['falso-team-login-novo']={...m.tokens['falso-team-pasta']};fs.writeFileSync(process.argv[2],JSON.stringify(m))" "$RAIZ/mapa.json" "$RAIZ/mapa-r585.json"
+iniciar_servidor "$RAIZ/mapa-r585.json" "$RAIZ/porta-r585.txt"
+API_R5="$API"
+API="$API_PRINCIPAL"
+cat > "$RAIZ/login-fora.cjs" <<'JS'
+// Depois de 'trocado': marca a troca como manual e simula o /login da team na pasta trabalho.
+const fs = require('fs');
+const path = require('path');
+const [, , caso, auto] = process.argv;
+const ler = (a) => JSON.parse(fs.readFileSync(a, 'utf8'));
+const gravar = (a, o) => fs.writeFileSync(a, JSON.stringify(o, null, 2) + '\n');
+const contas = path.join(caso, 'dados', 'contas');
+const est = ler(path.join(contas, 'estado.json'));
+est.automatico = auto === 'sim';
+est.pastas.trabalho.manual = true;
+est.pastas.trabalho.travouPor = null;
+gravar(path.join(contas, 'estado.json'), est);
+const credArq = path.join(caso, 'trabalho', '.claude', '.credentials.json');
+const cred = ler(credArq);
+cred.claudeAiOauth = { ...cred.claudeAiOauth, accessToken: 'falso-team-login-novo', refreshToken: 'falso-refresh-team-login-novo', expiresAt: 4102444800000 };
+gravar(credArq, cred);
+const claudeArq = path.join(caso, 'trabalho', '.claude.json');
+const claude = ler(claudeArq);
+claude.oauthAccount = est.contas.team.oauthAccount;
+gravar(claudeArq, claude);
+JS
+hash() { sha256sum "$1" | cut -d' ' -f1; }
+preparar_r() { # $1 = nome do caso, $2 = automatico (sim|nao)
+  local c; c="$(novo_caso "$1" nao)"
+  node "$RAIZ/ajustar.cjs" trocado "$c"
+  node "$RAIZ/login-fora.cjs" "$c" "$2"
+  printf '%s' "$c"
+}
+API="$API_R5"
+
+C_R1="$(preparar_r r1 nao)"
+CT_R1="$C_R1/dados/contas"
+H_CRED_R1="$(hash "$C_R1/trabalho/.claude/.credentials.json")"
+H_RT_R1="$(hash "$CT_R1/reserva-team.json")"; H_RP_R1="$(hash "$CT_R1/reserva-pessoal.json")"
+H_EST_R1="$(hash "$CT_R1/estacionado-trabalho.json")"
+RC_R1=0
+cli "$C_R1" trocar trabalho --pasta trabalho > "$RAIZ/r1.txt" 2>&1 || RC_R1=$?
+caso_r1() {
+  [ "$RC_R1" -eq 0 ] && contem "$(cat "$RAIZ/r1.txt")" "já está na conta trabalho" \
+    && [ "$(hash "$C_R1/trabalho/.claude/.credentials.json")" = "$H_CRED_R1" ] \
+    && [ "$(hash "$CT_R1/reserva-team.json")" = "$H_RT_R1" ] && [ "$(hash "$CT_R1/reserva-pessoal.json")" = "$H_RP_R1" ] \
+    && [ "$(ler "$CT_R1/estado.json" pastas.trabalho.conta)" = team ] \
+    && [ "$(ler "$CT_R1/estado.json" pastas.trabalho.manual)" = false ] \
+    && [ "$(ler "$CT_R1/estado.json" pastas.trabalho.travouPor)" = null ] \
+    && grep -qF '"tipo":"reconciliado","pasta":"trabalho","de":"pessoal","para":"team"' "$CT_R1/eventos.jsonl"
+}
+afirma "trocar trabalho com o login ja da conta team nao move credencial" caso_r1
+ORFAO_R1="$(ls "$CT_R1" | grep -E '^estacionado-trabalho\.orfao-[0-9]{8}-[0-9]{6}\.json$' || true)"
+caso_r1_orfao() {
+  [ ! -e "$CT_R1/estacionado-trabalho.json" ] && [ -n "$ORFAO_R1" ] \
+    && [ "$(hash "$CT_R1/$ORFAO_R1")" = "$H_EST_R1" ] && grep -qF "arquivado em $ORFAO_R1" "$CT_R1/eventos.jsonl"
+}
+afirma "#585: o estacionado órfão vira estacionado-trabalho.orfao-<carimbo>.json, com o mesmo conteúdo, citado no evento" caso_r1_orfao
+
+# Depois de reconciliar para casa, a troca automática seguinte tem de acontecer: a team está a 97% da
+# semana, a pessoal tem folga e uma reserva nova. Com o estacionado órfão no lugar, o mover recusaria.
+node -e "const fs=require('fs');const p=require('path');const c=process.argv[1];const e=JSON.parse(fs.readFileSync(p.join(c,'estado.json'),'utf8'));e.automatico=true;fs.writeFileSync(p.join(c,'estado.json'),JSON.stringify(e));fs.writeFileSync(p.join(c,'reserva-pessoal.json'),JSON.stringify({claudeAiOauth:{accessToken:'falso-pessoal-reserva',refreshToken:'falso-refresh-pessoal-nova',expiresAt:4102444800000,scopes:['user:inference','user:profile']}}))" "$CT_R1"
+rm -f "$CT_R1/uso-cache.json"
+cli "$C_R1" vigiar > "$RAIZ/r1b.txt" 2>&1 || true
+caso_r1b() {
+  [ "$(ler "$CT_R1/estado.json" pastas.trabalho.conta)" = pessoal ] \
+    && grep -qF '"tipo":"trocar","pasta":"trabalho"' "$CT_R1/eventos.jsonl" \
+    && ! grep -qF 'saida_ocupada' "$CT_R1/eventos.jsonl"
+}
+afirma "depois de reconciliar para casa a troca automatica seguinte nao falha com saida_ocupada" caso_r1b
+
+# Revisão 2: o arquivamento falha (antivírus segurando o arquivo). O estado segue o login mesmo assim,
+# o evento diz que o órfão ficou, e a rodada seguinte tenta de novo e arquiva.
+C_R6="$(preparar_r r6 nao)"
+CT_R6="$C_R6/dados/contas"
+H_EST_R6="$(hash "$CT_R6/estacionado-trabalho.json")"
+export RFM_CONTA_FALHA=arquivar
+cli "$C_R6" vigiar > "$RAIZ/r6a.txt" 2>&1 || true
+cli "$C_R6" vigiar > "$RAIZ/r6b.txt" 2>&1 || true
+unset RFM_CONTA_FALHA
+caso_r6_falha() {
+  [ "$(ler "$CT_R6/estado.json" pastas.trabalho.conta)" = team ] \
+    && [ "$(hash "$CT_R6/estacionado-trabalho.json")" = "$H_EST_R6" ] \
+    && grep -qF '"tipo":"reconciliado","pasta":"trabalho","de":"pessoal","para":"team","motivo":"não consegui arquivar o login guardado antigo (EBUSY)"' "$CT_R6/eventos.jsonl" \
+    && [ "$(grep -c 'não consegui arquivar' "$CT_R6/eventos.jsonl")" = 1 ]
+}
+afirma "#585: arquivamento que falha deixa o estado alinhado e o órfão no lugar, e a nova tentativa que falha não repete o aviso na mesma hora" caso_r6_falha
+cli "$C_R6" vigiar > "$RAIZ/r6c.txt" 2>&1 || true
+ORFAO_R6="$(ls "$CT_R6" | grep -E '^estacionado-trabalho\.orfao-[0-9]{8}-[0-9]{6}\.json$' || true)"
+caso_r6_retenta() {
+  [ ! -e "$CT_R6/estacionado-trabalho.json" ] && [ -n "$ORFAO_R6" ] \
+    && [ "$(hash "$CT_R6/$ORFAO_R6")" = "$H_EST_R6" ] \
+    && grep -qF "\"tipo\":\"reconciliado\",\"pasta\":\"trabalho\",\"de\":\"team\",\"para\":\"team\",\"motivo\":\"login guardado antigo arquivado em $ORFAO_R6\"" "$CT_R6/eventos.jsonl"
+}
+afirma "#585: a rodada seguinte tenta arquivar o órfão de novo e consegue" caso_r6_retenta
+
+# Com a troca automática desligada: o vigia não troca nada, mas o estado segue o login mesmo assim.
+C_R2="$(preparar_r r2 nao)"
+H_CRED_R2="$(hash "$C_R2/trabalho/.claude/.credentials.json")"
+cli "$C_R2" vigiar > "$RAIZ/r2.txt" 2>&1 || true
+caso_r2() {
+  contem "$(cat "$RAIZ/r2.txt")" "troca automática desligada" \
+    && [ "$(ler "$C_R2/dados/contas/estado.json" pastas.trabalho.conta)" = team ] \
+    && [ "$(ler "$C_R2/dados/contas/estado.json" pastas.trabalho.manual)" = false ] \
+    && [ "$(hash "$C_R2/trabalho/.claude/.credentials.json")" = "$H_CRED_R2" ] \
+    && grep -qF '"tipo":"reconciliado","pasta":"trabalho"' "$C_R2/dados/contas/eventos.jsonl"
+}
+afirma "#585: o vigia também alinha o estado ao login, sem mover credencial, mesmo com a troca automática desligada" caso_r2
+
+C_R3="$(preparar_r r3 nao)"
+fresca "$C_R3"
+cp "$C_R3/dados/contas/estado.json" "$RAIZ/estado-r3-antes.json"
+cli "$C_R3" status > "$RAIZ/r3.txt" 2>&1 || true
+LINHA_R3="$(grep '^pasta trabalho:' "$RAIZ/r3.txt" || true)"
+caso_r3() {
+  cmp -s "$C_R3/dados/contas/estado.json" "$RAIZ/estado-r3-antes.json" \
+    && [ ! -e "$C_R3/dados/contas/eventos.jsonl" ] \
+    && contem "$LINHA_R3" "estado diverge: diz conta pessoal, o login é da conta trabalho" \
+    && ! contem "$LINHA_R3" "troca manual"
+}
+afirma "#585: status sem a trava não grava e mostra a divergência na linha da pasta" caso_r3
+API="$API_PRINCIPAL"
+
+# Sentido inverso pelo vigia: estado em casa, login da outra conta registrada.
+C_R4="$(novo_caso r4 nao)"
+node "$RAIZ/ajustar.cjs" divergente "$C_R4"
+node -e "const fs=require('fs');const a=process.argv[1];const e=JSON.parse(fs.readFileSync(a,'utf8'));e.automatico=true;fs.writeFileSync(a,JSON.stringify(e))" "$C_R4/dados/contas/estado.json"
+cli "$C_R4" vigiar > "$RAIZ/r4.txt" 2>&1 || true
+caso_r4() {
+  [ "$(ler "$C_R4/dados/contas/estado.json" pastas.trabalho.conta)" = pessoal ] \
+    && [ "$(ler "$C_R4/dados/contas/estado.json" pastas.trabalho.manual)" = true ] \
+    && grep -qF '"tipo":"reconciliado","pasta":"trabalho","de":"team","para":"pessoal"' "$C_R4/dados/contas/eventos.jsonl" \
+    && grep -qF 'sem_login_guardado' "$C_R4/dados/contas/eventos.jsonl"
+}
+afirma "#585: em casa com o login da outra conta registrada, o vigia põe a pasta fora de casa (manual)" caso_r4
+
+# Login de conta NÃO registrada: nada muda no estado e o aviso segue identidade_divergente.
+C_R5="$(novo_caso r5 nao)"
+node "$RAIZ/ajustar.cjs" divergente "$C_R5"
+node -e "const fs=require('fs');const a=process.argv[1];const o=JSON.parse(fs.readFileSync(a,'utf8'));o.oauthAccount={...o.oauthAccount,emailAddress:'outro@exemplo.invalid'};fs.writeFileSync(a,JSON.stringify(o))" "$C_R5/trabalho/.claude.json"
+cp "$C_R5/dados/contas/estado.json" "$RAIZ/estado-r5-antes.json"
+API="$API_H"
+cli "$C_R5" status > "$RAIZ/r5.txt" 2>&1 || true
+API="$API_PRINCIPAL"
+caso_r5() {
+  cmp -s "$C_R5/dados/contas/estado.json" "$RAIZ/estado-r5-antes.json" \
+    && grep -qF '"tipo":"identidade_divergente"' "$C_R5/dados/contas/eventos.jsonl" \
+    && ! grep -qF '"tipo":"reconciliado"' "$C_R5/dados/contas/eventos.jsonl"
+}
+afirma "#585: login de conta não registrada não reconcilia e segue identidade_divergente" caso_r5
 
 echo "ok: $OK   falhou: $FALHOU"
 if [ "$FALHOU" -ne 0 ]; then exit 1; fi
