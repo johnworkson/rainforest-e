@@ -179,6 +179,65 @@ function lerTranscritoComOffsets(caminhoTranscrito, offsetInicio) {
   }
 }
 
+// Blocos que o harness injeta no texto de um prompt `type:"user"` (D3). Saem antes da LLM.
+const TAGS_INJETADAS = [
+  'system-reminder', 'command-name', 'command-message', 'command-args',
+  'local-command-stdout', 'local-command-stderr',
+];
+const MARCA_NOTIFICACAO_HARNESS = '[SYSTEM NOTIFICATION - NOT USER INPUT]';
+
+// Prefixo interno de linha `Agente:` gerada da troca de um <task-notification>. Não é texto de
+// transcrito: removerBlocosInjetados apaga qualquer ocorrência dele vinda da fala antes de trocar.
+const MARCA_LINHA_AGENTE = '\u0001';
+
+// Pareamento por pilha, em uma passada só: cada fechamento fecha a abertura mais recente ainda aberta.
+// Isso dá o mesmo resultado de varrer por profundidade a partir de cada abertura, mas em custo linear
+// (varrer de novo a cada abertura órfã ficava cúbico com N aberturas sem fechamento). O bloco externo
+// inteiro sai, mesmo com a mesma tag aninhada dentro. Abertura sem fechamento fica intacta.
+function removerBloco(texto, tag, substituir) {
+  const aber = '<' + tag + '>';
+  const fech = '</' + tag + '>';
+  const aberturas = [];
+  const pilha = [];
+  const re = new RegExp(aber + '|' + fech, 'g');
+  let m;
+  while ((m = re.exec(texto)) !== null) {
+    if (m[0] === aber) {
+      const ab = { ini: m.index, corpoFim: -1, fimFech: -1 };
+      aberturas.push(ab);
+      pilha.push(ab);
+    } else if (pilha.length > 0) {
+      const ab = pilha.pop();
+      ab.corpoFim = m.index;
+      ab.fimFech = m.index + fech.length;
+    }
+  }
+  let saida = '';
+  let pos = 0;
+  for (const ab of aberturas) {
+    if (ab.corpoFim < 0 || ab.ini < pos) continue;
+    const corpo = texto.slice(ab.ini + aber.length, ab.corpoFim);
+    saida += texto.slice(pos, ab.ini) + substituir(corpo);
+    pos = ab.fimFech;
+  }
+  return saida + texto.slice(pos);
+}
+
+// Remove blocos injetados do texto do prompt. <task-notification> vira linha `Agente: <summary>`
+// (com MARCA_LINHA_AGENTE na frente). Prompt que fica vazio volta ''. Função pura: não lê nem grava nada.
+function removerBlocosInjetados(texto) {
+  let t = String(texto).split(MARCA_LINHA_AGENTE).join('');
+  t = removerBloco(t, 'task-notification', (corpo) => {
+    const m = corpo.match(/<summary>([\s\S]*?)<\/summary>/);
+    const resumo = m ? m[1].replace(/\s+/g, ' ').trim() : '';
+    return '\n' + MARCA_LINHA_AGENTE + 'Agente: ' + (resumo || '(sem resumo)') + '\n';
+  });
+  for (const tag of TAGS_INJETADAS) t = removerBloco(t, tag, () => '');
+  // Só a linha que, aparada, é exatamente o marcador do harness sai. O texto em volta fica.
+  const saida = t.split('\n').filter((linha) => linha.trim() !== MARCA_NOTIFICACAO_HARNESS);
+  return saida.join('\n').trim();
+}
+
 // Formata eventos para passar à LLM.
 // Extrai conteúdo relevante de cada evento (prompts, respostas, chamadas de ferramenta).
 // Schema real dos transcritos (Claude Code):
@@ -192,9 +251,13 @@ function formatarParaLLM(eventos) {
     // Apenas "user" e "assistant" carregam conteúdo conversacional
     if (evento.type === 'user' && evento.message && evento.message.content) {
       const conteudo = evento.message.content;
-      const texto = typeof conteudo === 'string' ? conteudo : '';
-      if (texto.trim()) {
-        resumo.push(`Prompt: ${texto}`);
+      const texto = removerBlocosInjetados(typeof conteudo === 'string' ? conteudo : '');
+      if (texto) {
+        const linhas = texto.split('\n');
+        const agentes = linhas.filter((l) => l.startsWith(MARCA_LINHA_AGENTE));
+        const fala = linhas.filter((l) => !l.startsWith(MARCA_LINHA_AGENTE)).join('\n').trim();
+        for (const a of agentes) resumo.push(a.slice(MARCA_LINHA_AGENTE.length));
+        if (fala) resumo.push(`Prompt: ${fala}`);
       }
     }
 
@@ -726,4 +789,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { processarSessao, chamarLLM };
+module.exports = { processarSessao, chamarLLM, formatarParaLLM, removerBlocosInjetados };

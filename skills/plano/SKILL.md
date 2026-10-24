@@ -38,6 +38,10 @@ Design: <caminho do design>
 atende: D1, D2
 arquivos: `<padrão ou caminho>`
 depende de: nenhuma
+busca:
+- repo | <consulta> | <resultado>
+- livro | pulado: <motivo>
+desfecho: adotar|estender|compor|enxertar|construir
 mutacao:
   arquivo: `<arquivo onde a mutação entra>`
   de: <o padrão exato a inverter>
@@ -68,6 +72,10 @@ Cada tarefa leva: **tipo**, `atende:` (lista de `D<n>` do design que esta tarefa
 
 - **`prova:`** linha inteira com um par de crases: comando `bash -c` que **tem de FALHAR** (exit ≠ 0) quando rodado no commit base do briefing. Exemplos: `prova: \`bash scripts/testa-xyz.sh\``, `prova: \`node conferir-x.cjs\``. Executado num worktree descartável da base com timeout padrão 120 s (sobrescrevível por `RFM_PROVA_TIMEOUT_MS`), sem `RFM_ESTADO_ROOT`, `CLAUDE_PROJECT_DIR` e `RFM_ROOT` no ambiente. Saída 0 é recusa (o critério já passa sem a tarefa). Saída 126/127 é recusa quando o próprio comando não existe; `bash|sh|node|python <arquivo>` com o arquivo ainda ausente na base conta como falha legítima (a tarefa o cria). Tarefa `implementar`, `teste` ou sem tipo precisa de `prova:` **ou** `prova-na-base:`; isentos os tipos `docs`, `pesquisar`/`pesquisa` e `configurar`.
 - **`prova-na-base:`** aceita a tarefa sem executar, só na forma `prova-na-base: verde — <motivo não-vazio>` (o motivo sai no stdout do `marcar`). O motivo explica por que a tarefa não pode ser testada na base (ex.: "fixture de bateria", "depende de ferramenta externa"). Incompatível com `prova:` na mesma tarefa: as duas juntas são recusadas.
+
+### Campo `busca:` — procurar antes de construir
+
+Tarefa `implementar` (ou sem tipo) que cria caminho novo de código declara a busca antes de escrever: bloco `busca:` com canal `repo` (linha `- repo | <consulta> | <resultado>`; `pulado:` só para outro canal) e `desfecho:` (`adotar`, `estender`, `compor`, `enxertar` ou `construir`). Teste, `.md` e glob não contam. Quem confere é `node scripts/conferir-busca.cjs plano --slug <slug>`, rodado pelo `estado.cjs marcar --estagio plano`. Formato, exemplo e regras (aspas na consulta com `|`, `pulado:` no `repo`, caixa do caminho): `skills/plano/references/campo-busca.md`.
 
 ### Campo obrigatório: `mutacao:` — o alvo é declarado, nunca inferido
 
@@ -193,37 +201,7 @@ executou só falha no último portão:
 
 ### Evidência do `verificar` precisa citar um sensor
 
-Fechar o estágio `verificar` com `ok` exige mais do que `comando`/`saida`
-presentes na evidência (`--json` de `node scripts/estado.cjs marcar`):
-`comando` precisa casar com um **sensor**. Duas formas contam:
-
-- **peça do repo marcada `sensor`** por `node scripts/conferir-categoria.cjs`
-  (ex.: `node scripts/conferir-categoria.cjs` propriamente, ou outro
-  `scripts/conferir-*.cjs`) — `comando` cita o caminho da peça; ou
-- **sensor externo declarado** pelo campo `sensor_externo`, no mesmo
-  `--json` — string não vazia que precisa aparecer DENTRO de `comando`:
-
-  ```
-  --json '{"comando":"bash scripts/testa-estado.sh","saida":"...","sensor_externo":"bash scripts/testa-estado.sh"}'
-  ```
-
-Sem um dos dois, `scripts/estado.cjs` recusa o fechamento com exit 2. Só
-`verificar` barra — `executar` (o outro estágio que exige evidência) apenas
-avisa em stderr e fecha normalmente, porque barrar ali pararia trabalho
-legítimo no meio.
-
-**`scripts/testa-*.sh` NÃO são peças marcadas `sensor`** —
-`conferir-categoria.cjs` os exclui de propósito. Quase todo critério deste
-repo é "provado por `bash scripts/testa-*.sh`", então **critério do
-`verificar` cujo `comando` não seja peça marcada `sensor` precisa declarar
-`sensor_externo`**, mesmo sendo um script do próprio repo — senão o
-fechamento recusa.
-
-Este canal é diferente da linha `Sensor:` do briefing de despacho (ver
-`skills/executar/SKILL.md`) — aquela é lida por `hooks/portaria.cjs` a
-partir do prompt de despacho de agente; este é campo do `--json` de
-fechamento, lido por `scripts/estado.cjs`, que nunca recebe texto de
-briefing.
+Fechar `verificar` com `ok` exige `comando` casando com um sensor: peça marcada `sensor` pelo `conferir-categoria.cjs`, ou `sensor_externo` no `--json` contido em `comando`. `scripts/testa-*.sh` não é sensor, então critério com ele precisa declarar `sensor_externo`. Detalhe em `references/evidencia-do-verificar.md`.
 
 ### Critério de superfície humana
 
