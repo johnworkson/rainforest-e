@@ -2044,5 +2044,145 @@ else
 fi
 
 echo
+echo "== #573 B: cd - segue barrado com execucao indireta =="
+# `cd -` vai para OLDPWD. Resolver o OLDPWD pela linha foi tentado e recuado (3a revisao: `false &&
+# cd`, `cd arquivo`, `&`, `popd -n` levavam o gate a errar o destino); `cd -` com execucao
+# indireta segue barrado como na base, e a mensagem diz a saida (D4). Cwd = worktree LINKADO dentro do principal ($WN), payload de subagente: e onde
+# a rede #552 age. Placeholders: __SCR__ scratch do sandbox (fora do principal), __R__ principal,
+# __WN__ worktree linkado.
+SCR573="$RAIZ/scratch573"; mkdir -p "$SCR573" "$WN/sub"; echo 'x' > "$WN/sub/_powershell.py"
+s573() { local s; s=$(cat); s=${s//__SCR__/$SCR573}; s=${s//__R__/$R}; s=${s//__WN__/$WN}; s=${s//__FORA__/$FORA}; s=${s//__PY__/python}; printf "%s" "$s"; }
+g573() { gate "$1" "$2" "$(b "$3" "$WN")"; }
+# Vizinho que segue 0: `cd -` sem execucao indireta.
+g573 '#573 B: vizinho cd - >/dev/null; echo ok passa' 0 'cd - >/dev/null; echo ok'
+# Seguem 2: `cd -` com execucao indireta, com ou sem `cd` antes na linha.
+g573 '#573 B: cd sub && echo "$(pwd)" && cd - && echo "$(pwd)" segue 2' 2 'cd sub && echo "$(pwd)" && cd - && echo "$(pwd)"'
+g573 '#573 B: pushd sub && cd - && echo "$(pwd)" segue 2' 2 'pushd sub && cd - && echo "$(pwd)"'
+g573 '#573 B: cd arquivo; cd - && bash -c segue 2' 2 'cd ../../.. ; cd .claude/worktrees/x ; cd sub/_powershell.py ; cd - ; bash -c "echo x > f"'
+g573 '#573 B: false && cd sub; cd - && bash -c segue 2' 2 'cd ../../.. ; cd .claude/worktrees/x ; false && cd sub ; cd - ; bash -c "echo x > f"'
+g573 '#573 B: cd sub & cd - && bash -c segue 2' 2 'cd ../../.. ; cd .claude/worktrees/x ; cd sub & cd - ; bash -c "echo x > f"'
+g573 '#573 B: cd - >/dev/null; echo "$(pwd)" segue 2' 2 'cd - >/dev/null; echo "$(pwd)"'
+g573 '#573 B: cd -; echo "$(pwd)" segue 2' 2 'cd -; echo "$(pwd)"'
+g573 '#573 B: cd - && bash -c sem cd antes segue 2' 2 'cd - && bash -c "echo x > f"'
+g573 '#573 B: contorno cd ../../.. && cd <wt> && cd - && bash -c segue 2' 2 'cd ../../.. && cd .claude/worktrees/x && cd - && bash -c "echo x > f"'
+g573 '#573 B: cd "$D" && cd - && bash -c segue 2' 2 'cd "$D" && cd - && bash -c "echo x > f"'
+g573 '#573 B: cd inexistente; cd -; bash -c segue 2' 2 'cd nao-existe; cd -; bash -c "echo x > f"'
+g573 '#573 B: cd em ramo if; cd - && bash -c segue 2' 2 'if false; then cd sub; fi; cd - && bash -c "echo x > f"'
+g573 '#573 B: (cd sub); cd - && bash -c segue 2' 2 '(cd sub); cd - && bash -c "echo x > f"'
+g573 "#573 B: cd sub && bash -c 'cd -; ...' segue 2" 2 "cd sub && bash -c 'cd -; echo x > f'"
+g573 '#573 B: cd sub; cd -P; cd - && bash -c segue 2' 2 'cd sub; cd -P; cd - && bash -c "echo x > f"'
+gate '#573 B: PowerShell cd -; & { Set-Content f x } segue 2' 2 "$(bp 'cd -; & { Set-Content f x }' "$WN")"
+# Comando real do incidente (agent-aaf21d7221e8dde7d.jsonl:173), caminhos trocados pelos do sandbox.
+# O interprete vai como __PY__ e o s573 o devolve: testa-dependencias-de-bateria le o heredoc como chamada.
+inc=$(s573 <<'EOC'
+set -u; SCR="__SCR__"; mkdir -p "$SCR"; F="sub/_powershell.py"; cp "$F" "$SCR/_powershell.copia-original.py"; echo "ocorrencias antes: $(grep -c 'x' "$F")"; sed -i 's/a/b/' "$F"; cd sub && __PY__ -m pytest -q | tail -n 25; echo "EXIT_MUTADO=${PIPESTATUS[0]}"; cd - >/dev/null; cp "$SCR/_powershell.copia-original.py" "$F"
+EOC
+)
+g573 '#573 B: comando real do incidente (agent-aaf21d7221e8dde7d.jsonl:173) segue 2' 2 "$inc"
+# O mesmo comando reescrito como a mensagem manda (caminho absoluto no lugar do `cd -`) passa.
+# `cd ..` nao serve: com `$(` na linha o gate le `..` a partir do cwd do agente.
+inc2=$(printf '%s' "$inc" | sed "s#cd - >/dev/null#cd $WN#")
+case "$inc2" in *"cd -"*) falhou=$((falhou+1)); echo "  FALHA #573 B: a reescrita do incidente ainda tem cd -";; esac
+g573 '#573 B: incidente reescrito com cd <worktree> passa' 0 "$inc2"
+# Seguem 2: opcoes e cd sem destino de verdade continuam barrando.
+g573 '#573 B: cd -P; echo "$(pwd)" segue 2' 2 'cd -P; echo "$(pwd)"'
+g573 '#573 B: cd --; echo "$(pwd)" segue 2' 2 'cd --; echo "$(pwd)"'
+g573 '#573 B: cd; echo "$(pwd)" segue 2' 2 'cd; echo "$(pwd)"'
+g573 '#573 B: HOME=$(dirname $PWD); cd -P; touch f segue 2' 2 'HOME=$(dirname $PWD); cd -P; touch f'
+g573 '#573 B: HOME=<principal>; cd; touch ../../../f segue 2' 2 'HOME=__R__; cd; touch ../../../f'
+
+echo
+echo "== #573 A: destino com variavel =="
+# Recuo da D3 (decisao do usuario, 2026-10-22): destino de redirecionamento que COMECA com
+# `$NOME`/`${NOME}` segue barrado como na base — julgar o valor pedia reimplementar a gramatica
+# do shell, e cada revisao achou o proximo contorno (atribuicao em ramo que nao roda, laco, glob,
+# nome indireto, comentario, heredoc). Muda so a mensagem (secao D4). A saida e o caminho literal.
+# Mesmo sandbox da secao B: cwd = worktree linkado ($WN), __SCR__ e __FORA__ fora de qualquer repo.
+g573a() { gate "$1" "$2" "$(b "$(printf '%s' "$3" | s573)" "$WN")"; }
+g573a '#573 A: D=<scratchpad>; echo x > "$D/f" segue 2 (recuo da D3)' 2 'D=__SCR__; echo x > "$D/f"'
+g573a '#573 A: D="<W>/sub"; echo x > "$D/f" segue 2 (recuo da D3)' 2 'D="__WN__/sub"; echo x > "$D/f"'
+TMP_573="${TMP-}"; TMP_573_SET="${TMP+1}"
+export TMP="$FORA"
+g573a '#573 A: echo x > "$TMP/f" com TMP fora de repo segue 2 (recuo da D3)' 2 'echo x > "$TMP/f"'
+if [ -n "$TMP_573_SET" ]; then export TMP="$TMP_573"; else unset TMP; fi
+# Comando real do incidente (agent-a4131c7ff7f0b1d90.jsonl:74), caminhos trocados pelos do sandbox:
+# continua barrado; a mensagem (secao D4) manda escrever o caminho literal.
+inc=$(s573 <<'EOC'
+D="__SCR__/stubprova"; mkdir -p "$D/bin" && printf '#!/bin/sh\necho "$@" > "%s/pwsh.args"\n' "$D" > "$D/bin/pwsh" && chmod 755 "$D/bin/pwsh" && cd "$D" && env PATH="$D/bin" /usr/bin/sh -c 'command -v pwsh'; echo "exit=$?"; cat "$D/pwsh.args" 2>&1; echo ---; which sh;
+EOC
+)
+g573a '#573 A: comando real do incidente (agent-a4131c7ff7f0b1d90.jsonl:74) segue 2 (recuo da D3)' 2 "$inc"
+# A saida que a mensagem sugere: o mesmo comando com o caminho literal passa.
+inc_lit=$(s573 <<'EOC'
+mkdir -p "__SCR__/stubprova/bin" && printf '#!/bin/sh\necho x\n' > "__SCR__/stubprova/bin/pwsh" && chmod 755 "__SCR__/stubprova/bin/pwsh"
+EOC
+)
+g573a '#573 A: o mesmo com caminho literal no destino passa' 0 "$inc_lit"
+# Contornos achados nas revisoes do lote: continuam barrados.
+g573a '#573 A: P=<principal>; echo x > $P/f segue 2' 2 'P=__R__; echo x > $P/f'
+g573a '#573 A: D=<W>/../../..; echo x > "$D/f" segue 2' 2 'D=__WN__/../../..; echo x > "$D/f"'
+g573a '#573 A: laco com reatribuicao depois do destino segue 2' 2 'D=__FORA__; for i in 1 2; do echo x > "$D/a.txt"; D=${PWD%/*/*/*}; done'
+g573a '#573 A: glob no valor da variavel segue 2' 2 'D=__FORA__/../princip*; echo x > $D/a.txt'
+g573a '#573 A: N=D; declare "$N=..."; echo x > "$D/f" segue 2' 2 'N=D; D=__FORA__; declare "$N=__R__"; echo x > "$D/f"'
+g573a '#573 A: comentario antes da reatribuicao segue 2' 2 'D=__R__ # ; D=__FORA__
+echo x > "$D/f"'
+CPD_573="${CLAUDE_PROJECT_DIR-}"; CPD_573_SET="${CLAUDE_PROJECT_DIR+1}"
+export CLAUDE_PROJECT_DIR="$R"
+g573a '#573 A: echo x > "$CLAUDE_PROJECT_DIR/f" com a variavel no principal segue 2' 2 'echo x > "$CLAUDE_PROJECT_DIR/f"'
+g573a '#573 A: false && CLAUDE_PROJECT_DIR=<fora>; echo x > "$CLAUDE_PROJECT_DIR/f" segue 2' 2 'false && CLAUDE_PROJECT_DIR=__FORA__; echo x > "$CLAUDE_PROJECT_DIR/f"'
+if [ -n "$CPD_573_SET" ]; then export CLAUDE_PROJECT_DIR="$CPD_573"; else unset CLAUDE_PROJECT_DIR; fi
+unset NAO_DEFINIDA
+g573a '#573 A: echo x > "$NAO_DEFINIDA/f" segue 2' 2 'echo x > "$NAO_DEFINIDA/f"'
+# Vizinhos legitimos: variavel como argumento (fora da rede de destino) e caminho literal.
+g573a '#573 A: vizinho D=<scratchpad>; touch "$D/f" passa' 0 'D=__SCR__; touch "$D/f"'
+g573a '#573 A: vizinho echo x > "<scratchpad>/f" literal passa' 0 'echo x > "__SCR__/f"'
+
+echo
+echo "== #573 D4: mensagem da rede =="
+# Bloqueio da rede com o cwd num worktree diz o que barrou, e nao chama o worktree de
+# "diretorio de trabalho principal" (#289). Confere exit 2, um trecho que TEM de sair no stderr
+# e, opcional, um trecho que NAO pode sair.
+gate_stderr() { # nome, json, trecho que tem de sair, [trecho que nao pode sair]
+  local nome="$1" json="$2" tem="$3" naotem="${4-}"
+  if [ -z "$json" ]; then falhou=$((falhou+1)); echo "  FALHA $nome: payload vazio"; return; fi
+  local saida got
+  saida=$(printf '%s' "$json" | node "$GATE" 2>&1); got=$?
+  if [ "$got" = 2 ] && printf '%s' "$saida" | grep -qF -- "$tem" && { [ -z "$naotem" ] || ! printf '%s' "$saida" | grep -qF -- "$naotem"; }; then
+    ok=$((ok+1)); echo "  ok   $nome (exit 2, stderr conferido)"
+  else falhou=$((falhou+1)); echo "  FALHA $nome: esperava exit 2 com '$tem'${naotem:+ e sem '$naotem'}, veio exit $got"; echo "$saida" | sed 's/^/         /' | head -8; fi
+}
+unset NAO_DEFINIDA
+gate_stderr '#573 D4: bloqueio da rede com cwd em worktree nao diz diretorio de trabalho principal' \
+  "$(b 'echo x > "$NAO_DEFINIDA/f"' "$WN")" '$NAO_DEFINIDA/f' 'diretorio de trabalho principal'
+gate_stderr '#573 D4: echo x > "$NAO_DEFINIDA/f" sugere caminho literal ou a ferramenta Write' \
+  "$(b 'echo x > "$NAO_DEFINIDA/f"' "$WN")" 'ferramenta Write' 'diretorio de trabalho principal'
+gate_stderr '#573 D4: cd -P; echo "$(pwd)" nomeia cd sem destino com execucao indireta' \
+  "$(b 'cd -P; echo "$(pwd)"' "$WN")" 'execucao indireta' 'diretorio de trabalho principal'
+gate_stderr '#573 D4: P=<principal>; echo x > $P/f nomeia o caminho do principal' \
+  "$(b "$(printf '%s' 'P=__R__; echo x > $P/f' | s573)" "$WN")" "cita caminho do checkout principal: $R" 'diretorio de trabalho principal'
+gate_stderr '#573 D4: bloqueio da rede manda o subagente parar e nao nomeia a escotilha' \
+  "$(b 'echo x > "$NAO_DEFINIDA/f"' "$WN")" 'PARE e reporte isto para a janela principal' 'RAINFOREST_GATE_OFF'
+gate_stderr '#573 D4: cd - com execucao indireta manda trocar pelo caminho absoluto' \
+  "$(b 'cd - >/dev/null; echo "$(pwd)"' "$WN")" 'troque o `cd -` pelo caminho' 'diretorio de trabalho principal'
+# A saida do `cd -` so aparece quando ele e a causa: com outra causa na linha (`cd` sozinho,
+# HOME redefinido, `~`), trocar o `cd -` nao destrava, e a mensagem e a geral (revisao 4, achado 1).
+gate_stderr '#573 D4: cd; cd -; echo $(date) nao culpa o cd -' \
+  "$(b 'cd; cd - >/dev/null; echo $(date)' "$WN")" 'redefine a casa' 'troque o `cd -`'
+gate_stderr '#573 D4: HOME=<principal>; cd -; echo $(date) nao culpa o cd -' \
+  "$(b "$(printf '%s' 'HOME=__R__; cd -; echo $(date)' | s573)" "$WN")" 'redefine a casa' 'troque o `cd -`'
+gate_stderr '#573 D4: cd -; echo ~ $(date) nao culpa o cd -' \
+  "$(b 'cd - ; echo ~ $(date)' "$WN")" 'redefine a casa' 'troque o `cd -`'
+# 5a revisao: `cd "-"` e `cd -` com aspas tambem recebem a saida; a medida da causa nao pode
+# custar o quadrado dos `cd -` (1600 deles com `$(` levavam ~40 s); e o caminho vazio achado no
+# destino (`FileSystem::`) barra como na base.
+gate_stderr '#573 D4: cd "-"; echo $(date) nomeia o cd -' \
+  "$(b 'cd "-"; echo $(date)' "$WN")" 'troque o `cd -` pelo caminho' 'diretorio de trabalho principal'
+CDH1600=$(node -e 'process.stdout.write("cd -; ".repeat(1600) + "echo $(date)")')
+gate_rapido '#573 D4: 1600 cd - com $( barra em menos de 2 s' 2 "$(b "$CDH1600" "$WN")"
+g573 '#573 rev5: cd ../../..; echo x <>FileSystem:: segue 2' 2 'cd ../../..; echo x <>FileSystem::'
+g573 '#573 rev5: cd ../../..; echo x >&FileSystem:: segue 2' 2 'cd ../../..; echo x >&FileSystem::'
+g573 '#573 rev5: cd ../../..; echo x 3>FileSystem:: segue 2' 2 'cd ../../..; echo x 3>FileSystem::'
+gate_stderr '#573 D4: subagente com cwd no principal continua com a mensagem do principal' \
+  "$(b 'echo x > f' "$R")" 'Este e o diretorio de trabalho principal'
 echo "== resultado: $ok ok, $falhou falha(s) =="
 [ "$falhou" = 0 ]

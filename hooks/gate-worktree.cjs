@@ -438,6 +438,28 @@ function dirDe(alvo) {
   return atual;
 }
 
+const SAIDAS_DE_SUBAGENTE =
+  `PARE e reporte isto para a janela principal — ela decide como seguir.\n` +
+  `NAO crie arquivo nem variavel para desativar esta trava: a decisao nao e sua,\n` +
+  `e desativa-la para si mesmo e o contorno que esta trava existe para impedir.\n`;
+
+/**
+ * Bloqueio pela rede de caminho do principal (#552) com o cwd do agente num worktree (#573, D4):
+ * diz o que barrou, nao "diretorio de trabalho principal" (o criterio da #289).
+ */
+function bloqueiaPelaRede(rede, toplevel, agente) {
+  process.stderr.write(
+    `BLOQUEADO pelo gate de worktree do rainforest-mind.\n\n` +
+    `${rede}\n` +
+    `Repo: ${toplevel}\n` +
+    `Agente: ${agente}\n\n` +
+    `O cwd do agente e um worktree isolado, mas o gate nao confirmou que este comando fica\n` +
+    `dentro dele (rede de caminho do checkout principal).\n\n` +
+    SAIDAS_DE_SUBAGENTE
+  );
+  process.exit(2);
+}
+
 function bloqueia(motivo, toplevel, agente, apenasRestauracao = null, ehWorktreeAlvo = false) {
   // P1 do relatorio 2026-08-11-escotilha-do-gate-usada-para-contornar: a saida
   // de emergencia era NOMEADA na mensagem que o SUBAGENTE le. Um implementador
@@ -458,9 +480,7 @@ function bloqueia(motivo, toplevel, agente, apenasRestauracao = null, ehWorktree
   // documentado. Por isso a mensagem para o subagente nao nomeia nenhuma.
   const ehSubagente = !!agente;
   const saidas = ehSubagente
-    ? `PARE e reporte isto para a janela principal — ela decide como seguir.\n` +
-      `NAO crie arquivo nem variavel para desativar esta trava: a decisao nao e sua,\n` +
-      `e desativa-la para si mesmo e o contorno que esta trava existe para impedir.\n`
+    ? SAIDAS_DE_SUBAGENTE
     : `Quem decide seguir sem isolamento e voce, e tem duas saidas:\n` +
       `  - node scripts/setup.cjs --desligar gate-worktree --escopo projeto (preferida);\n` +
       `  - RAINFOREST_GATE_OFF=1 no ambiente da sessao (desliga na sessao inteira).\n`;
@@ -1736,8 +1756,10 @@ function soComandosInertes(texto) {
 const ESCRITA_DEPOIS = String.raw`(?!\s*(?:[-+*/%]|\?\?)?=(?!=)|\s*,|\s+in\b)`;
 function casaRedefinida(comando, ehPowerShell) {
   const usaCasa = new RegExp(`[$%]\\{?(?:env:)?(?:${NOMES_DA_CASA})`, "i");
-  // `cd` sem destino: so opcoes (`-P`, `--`), e depois fim, separador, redirecionamento,
-  // comentario ou quebra de linha.
+  // `cd` sem destino: so opcoes (`-P`, `-L`, `--`), e depois fim, separador, redirecionamento,
+  // comentario ou quebra de linha. `cd -` (OLDPWD) tambem entra: resolver o OLDPWD pela propria
+  // linha pedia saber se cada `cd` anterior rodou (`false && cd`, `cd arquivo`, `&`, `popd -n`,
+  // `CDPATH`), e a 3a revisao achou contorno em cada um; o usuario decidiu recuar (#573, 2026-10-22).
   const cdSemArgumento = /(^|[\s;&|(`{])(cd|chdir|pushd)([ \t]+-[-\w@]*)*[ \t]*($|[;&|)}#<>\r\n]|\d>)/;
   // Til fora de palavra: depois de letra, numero, `_` ou contrabarra ele nao expande (`HEAD~1`);
   // qualquer outro vizinho (`${X/y/~}`, `${U:-~}`) e posicao de expansao, sem lista de grafias.
@@ -1762,12 +1784,24 @@ function casaRedefinida(comando, ehPowerShell) {
   return false;
 }
 
+// #573 (D4, recuo da D3): destino de redirecionamento que COMECA com variavel (`$NOME`, `${NOME}`),
+// quando a rede o barra, recebe mensagem propria. Julgar o valor da variavel pedia reimplementar a gramatica do shell
+// (atribuicao em ramo que nao roda, laco, glob, nome indireto, comentario, heredoc) e cada rodada
+// de revisao achou o proximo contorno; o usuario decidiu recuar (2026-10-22). Os atalhos da casa
+// (`$HOME/...`) seguem o caminho proprio de `CASA_NO_INICIO`.
+function variavelNoInicio(destino) {
+  const m = /^\$(?:([A-Za-z_]\w*)|\{([A-Za-z_]\w*)\})/.exec(destino.replace(/^["']+/, ""));
+  if (!m) return null;
+  const nome = m[1] || m[2];
+  return new RegExp(`^(?:${NOMES_DA_CASA})$`).test(nome) ? null : nome;
+}
+
 /**
  * Alvos da rede (D1-D5): um `{dir: <principal>, incerto: true}` por segmento que cita
  * caminho do principal fora de leitura, ou que roda com cwd no principal. Vazio
  * quando o cwd nao e um worktree linkado.
  */
-function alvosDaRede(comando, cwd, ehPowerShell) {
+function alvosDaRede(comando, cwd, ehPowerShell, soVeredito = false) {
   const repo = principalDoWorktree(cwd);
   if (!repo) return [];
   // Isencao dos worktrees por PALAVRA de shell (revisao de seguranca): o caminho do worktree
@@ -1847,15 +1881,42 @@ function alvosDaRede(comando, cwd, ehPowerShell) {
     if (!palavras.length) return /[{}$`]/.test(texto);
     return palavras.some((p) => palavraQueSobe(p, base, c));
   };
-  const citaProtegido = (texto, base) => caminhosCitados(texto, ehPowerShell).some((c) => protegido(c, base, texto));
-  const alvo = [{ dir: repo.principal, incerto: true }];
-  if (casaRedefinida(comando, ehPowerShell)) return alvo;
+  // O primeiro caminho que cai no principal (para a mensagem, D4), ou null. Caminho vazio achado
+  // vira um rotulo, nunca "": a string vazia e falsa e a rede deixava de barrar (`echo x <>FileSystem::`,
+  // 5a revisao). O veredito tem que ser o do `.some` da base.
+  const primeiroProtegido = (lista, base, texto) => {
+    const i = lista.findIndex((c) => protegido(c, base, texto));
+    return i < 0 ? null : lista[i] || "(caminho vazio)";
+  };
+  const citaProtegido = (texto, base) => primeiroProtegido(caminhosCitados(texto, ehPowerShell), base, texto);
+  // O alvo leva o motivo (#573 D4): `bloqueiaPelaRede` diz o que barrou.
+  const alvo = (rede) => [{ dir: repo.principal, incerto: true, rede }];
+  if (casaRedefinida(comando, ehPowerShell)) {
+    // #573 (recuo da D2): o `cd -` segue barrado como antes, mas o agente le a causa e a saida.
+    // So culpa o `cd -` quando ele e a causa: a linha reescrita como a saida manda (cada `cd -`
+    // trocado pelo caminho do worktree) nao e barrada pela rede. `cd; cd -; echo $(date)` barra pelo
+    // `cd` sozinho, e `HOME=<principal>; cd -` pelo caminho citado: a saida seria falsa.
+    // `soVeredito` corta a recursao: a chamada de dentro so mede, nunca escolhe mensagem. A medida
+    // so escolhe mensagem (os dois ramos barram), entao linha longa nao a paga: com `$(` o custo da
+    // rede cresce com o quadrado dos caminhos citados, e cada `cd -` vira um (5a revisao).
+    const HIFEN = /(^|[\s;&|(`{"'])((?:cd|pushd)[ \t]+)["']?-["']?(?=$|[\s;&|)}#<>"'])/g;
+    const medivel = comando.length <= 2000 && (comando.match(HIFEN) || []).length <= 8;
+    const comCaminho = medivel ? comando.replace(HIFEN, (_, a, b) => `${a}${b}${cwd}`) : comando;
+    if (!soVeredito && !ehPowerShell && medivel && /(^|[\s;&|(`{])(?:cd|pushd)[ \t]+-(?=$|[\s;&|)}#<>])/.test(comando.replace(/["'\\]/g, "")) &&
+        !alvosDaRede(comCaminho, cwd, false, true).length) {
+      return alvo("A linha usa `cd -` (volta ao diretorio anterior) junto de execucao indireta (`$(`, `bash -c`,\n`source`): o gate nao sabe para onde o `cd -` leva. Saida: troque o `cd -` pelo caminho\nabsoluto do diretorio (`cd /caminho/do/worktree`).");
+    }
+    return alvo("A linha redefine a casa (HOME/USERPROFILE), ou usa a casa (`~`, `$HOME`, `cd` sem destino)\njunto de execucao indireta (`$(`, `bash -c`, `source`): o gate nao sabe para onde o shell vai.");
+  }
   // Segmentacao nao confiavel (D2): a linha inteira e um segmento so, e nada e leitura.
   // Bash com `\` + quebra: colar as linhas erra quando as contrabarras sao pares (`ls \\` + quebra +
   // `rm <P>/f`), e nao colar erra a continuacao; a linha toda vira um segmento so.
   const naoConfiavel = /\$\(|`|\$'|\\\r?\n/.test(comando) && !ehPowerShell
     || ehPowerShell && (desalinhaAMascara(comando) || /[\u2018-\u201e]/.test(comando) || /"[^"]*\$\(/.test(comando) || /@['"]/.test(comando));
-  if (naoConfiavel) return citaProtegido(comando, cwd) ? alvo : [];
+  if (naoConfiavel) {
+    const citado = citaProtegido(comando, cwd);
+    return citado ? alvo(`A linha cita caminho que cai no checkout principal: ${citado}`) : [];
+  }
 
   const segmentos = segmentosDaRede(comando, ehPowerShell);
   // Config do git ou do pager mexida em qualquer segmento da linha (revisao de seguranca).
@@ -1875,18 +1936,26 @@ function alvosDaRede(comando, cwd, ehPowerShell) {
       // chaves (`Get-Content (Remove-Item <P>/f)` roda o de dentro).
       for (const destino of destinosDeRedirecionamento(seg, ehPowerShell)) {
         if (ehDescarteDeSaida(destino, ehPowerShell)) continue;
-        if (caminhosCitados(destino, ehPowerShell).concat([destino.replace(/^FileSystem::/i, "")]).some((c) => protegido(c, base, destino))) return alvo;
+        const caido = primeiroProtegido(caminhosCitados(destino, ehPowerShell).concat([destino.replace(/^FileSystem::/i, "")]), base, destino);
+        // Mesmo veredito de antes; so a mensagem muda quando a causa e a variavel no inicio (D4).
+        if (caido && !ehPowerShell && variavelNoInicio(destino)) {
+          return alvo(`Destino de redirecionamento comeca com variavel: ${destino}\n` +
+            `O gate nao julga o valor de variavel no destino. Saida: escreva o caminho literal\nno comando, ou grave o arquivo com a ferramenta Write.`);
+        }
+        if (caido) return alvo(`Destino de redirecionamento cai no checkout principal, ou tem expansao que o gate nao resolve: ${caido}`);
       }
       // Na chamada .NET de leitura, o argumento entre parenteses e o proprio alvo da leitura.
-      if (leitura[i] !== "net" && citaProtegido(trechosAninhados(seg), base)) return alvo;
+      const aninhado = leitura[i] !== "net" && citaProtegido(trechosAninhados(seg), base);
+      if (aninhado) return alvo(`Trecho entre parenteses ou chaves cita caminho do checkout principal: ${aninhado}`);
       continue;
     }
     // Fora de leitura: rodar com cwd no principal, ou citar caminho dele.
-    if (!mov.incerto && protegido(base, base)) return alvo;
+    if (!mov.incerto && protegido(base, base)) return alvo(`Segmento fora de leitura roda com cwd no checkout principal (${base}): ${seg.trim()}`);
     // Texto cru (as aspas delimitam o caminho: `('<P>'+'/f')`); em `git`/`gh`, os tokens sem a mensagem (D4).
     const semMensagem = semTextoDeMensagem(toks);
     const texto = semMensagem === toks ? seg : semMensagem.map((t) => t.v).join(" ");
-    if (citaProtegido(texto, base)) return alvo;
+    const citado = citaProtegido(texto, base);
+    if (citado) return alvo(`Segmento fora de leitura cita caminho do checkout principal: ${citado}`);
   }
   return [];
 }
@@ -2025,7 +2094,7 @@ function main() {
 
   if (!alvos.length) process.exit(0);
 
-  for (const { dir, incerto } of alvos) {
+  for (const { dir, incerto, rede } of alvos) {
     if (ehScratchpad(dir)) continue; // scratchpad da sessao: livre, ainda que seja repo git
     const estado = estadoDoRepo(dirDe(dir));
     if (!estado) continue;           // fora de repo git: livre
@@ -2036,6 +2105,8 @@ function main() {
     // sem confiar na classificacao de worktree — mesmo espirito do ramo de
     // CLI que ja faz isso para `cd`/subshell nao resolvidos.
     if (!incerto && estado.ehWorktree) continue; // worktree linkado: era pra ser isso mesmo
+    // Alvo da rede (#573 D4): o cwd e worktree; diz o que barrou, nao "diretorio principal".
+    if (rede) bloqueiaPelaRede(rede, estado.toplevel, `${ev.agent_type || "?"} (${ev.agent_id})`);
     const restauro = linhaDeRestauro(entrada.command || '', estado.toplevel, nome);
     bloqueia(motivo, estado.toplevel, `${ev.agent_type || "?"} (${ev.agent_id})`, restauro, estado.ehWorktree);
   }
