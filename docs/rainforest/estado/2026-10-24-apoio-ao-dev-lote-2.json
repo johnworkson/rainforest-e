@@ -1,0 +1,145 @@
+{
+  "slug": "2026-10-24-apoio-ao-dev-lote-2",
+  "titulo": "2026-10-24-apoio-ao-dev-lote-2",
+  "criado_em": "2026-10-24",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-24-apoio-ao-dev-lote-2.md",
+    "em": "2026-10-24"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-24-apoio-ao-dev-lote-2.md",
+    "tarefas": 6,
+    "paralelas": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "em": "2026-10-24"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-24",
+    "integradas": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "em_voo": [],
+    "em": "2026-10-25",
+    "tarefas_ok": 6,
+    "tarefas": 6,
+    "comando": "volta 2: integrar-tarefa 5,2,1,3 (conferir-entrega + mutação); bash scripts/varrer-baterias.sh; bash scripts/testa-auditor-de-seguranca.sh (isolada); conferir-fluxo creep --base 5a9342cf",
+    "saida": "4 integrações aceitas (1b8eecb2, 38814786, 4d8b5dc0, e40a342e); varredura: 1 vermelha, scripts/testa-auditor-de-seguranca.sh caso 11 (orcamento.cjs mede o additionalContext vivo da abertura); isolada: ok: 107 falhou: 0 — oscilação de ambiente, fora do diff",
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-veredito-coerente.sh, caso VEREDITO: ok com achado [alta] devolve a vez na primeira parada"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-prova-sem-caso.sh, caso prova que sai 1 com placar ok: 0 falhou: 0 é recusada"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-limpar-worktrees-arquivo.sh, caso worktree destacado com commit próprio ganha refs/rainforest/arquivo antes de sair"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "vermelho",
+        "fixture": "testa-saude-nao-medido.sh, caso log de erros ilegível sai aviso não medido"
+      },
+      {
+        "tarefa": 5,
+        "resultado": "vermelho",
+        "fixture": "testa-memoria-vazio-explicado.sh, caso filtro que exclui tudo diz quantas observações existem no escopo"
+      },
+      {
+        "tarefa": 6,
+        "resultado": "n/a",
+        "motivo": "metadado de versão e documentação, sem comportamento a inverter"
+      }
+    ],
+    "reaberturas": 1
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "22059c7da0a652e87ca6c717a2fdeadc2a769afd",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a2e1a0e67b080c791",
+        "veredito": "ok",
+        "em": "2026-10-25",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind--claude-worktrees-apoio-ao-dev-lote-1/a8916a80-26c9-4137-b35b-c9bf409af105/subagents/agent-a2e1a0e67b080c791.jsonl"
+      }
+    ],
+    "achados": 2,
+    "em": "2026-10-25",
+    "base": "5a9342cf",
+    "head": "22059c7"
+  },
+  "verificar": {
+    "status": "ok",
+    "comando": "bash hooks/testa-veredito-coerente.sh; bash scripts/testa-conferir-prova-sem-caso.sh; bash scripts/testa-limpar-worktrees-arquivo.sh; bash scripts/testa-saude-nao-medido.sh; bash scripts/testa-memoria-vazio-explicado.sh; node -e (versão dos dois plugin.json); node scripts/conferir-fluxo.cjs cobertura --slug 2026-10-24-apoio-ao-dev-lote-2",
+    "saida": "tarefas 1-5: as cinco provas exit=0 (saude 14 ok 0 falha(s); vazio total=9 vermelhas:[]); tarefa 6: 1.76.0 / 1.76.0 e CHANGELOG casado com o diff pelo revisor da volta 2; cobertura válida — 9 decisão(ões), 6 tarefa(s)",
+    "sensor_externo": "node scripts/conferir-fluxo.cjs cobertura",
+    "em": "2026-10-25",
+    "head": "22059c7da0a652e87ca6c717a2fdeadc2a769afd"
+  },
+  "fechar": {
+    "status": "pendente"
+  },
+  "decididos": [
+    {
+      "pergunta": "Tarefa 4: listar e contar do erros.cjs com log ilegivel",
+      "escolha": "Saem 1 com a causa no stderr, sem imprimir zero; checarErros exportado para teste",
+      "porque": "imprimir 0 erros com log ilegivel e o mesmo furo de D6; o unico consumidor (hooks/mod.tsx:543) ja trata exit nao zero como indisponivel",
+      "estagio": "executar",
+      "em": "2026-10-25T00:29:55.705Z"
+    },
+    {
+      "pergunta": "Tarefa 1: segunda parada com veredito incoerente nao grava (estado.cjs veredito confere a ultima linha)",
+      "escolha": "estado.cjs aceita --veredito invalido quando a ultima linha esta no vocabulario mas contarAchados acusa incoerencia; item so com [design] conta como achado",
+      "porque": "sem isso a segunda parada some calada (hook com stdio ignore) e o revisar fecha sem registro; reprovado cujo unico item e [design] e o caso que mais precisa passar",
+      "estagio": "executar",
+      "em": "2026-10-25T00:36:46.986Z"
+    },
+    {
+      "pergunta": "achado 3: placar 'N ok, M falha(s)' fica cego no conferir-prova",
+      "escolha": "conferir-prova reconhece também falha(s)/falhas além do extrairPlacar; conferir-mutacao não muda",
+      "porque": "113 baterias usam falha(s); mexer no extrairPlacar mudaria a detecção de colapso da mutação, fora do D4",
+      "estagio": "executar",
+      "em": "2026-10-25T02:17:42.338Z"
+    },
+    {
+      "pergunta": "achado 4: ref de arquivo colide por basename e quebra com espaço",
+      "escolha": "nome saneado (caracteres inválidos viram -); se a ref já aponta para outro commit, usa sufixo -<sha7>; mesma ref no mesmo commit é reuso",
+      "porque": "mantém refs/rainforest/arquivo/<pasta> do D5 no caso comum e nunca deixa worktree irremovível",
+      "estagio": "executar",
+      "em": "2026-10-25T02:17:42.435Z"
+    },
+    {
+      "pergunta": "achado 6: etiqueta conta como achado sem olhar o conteúdo",
+      "escolha": "não muda o código; revisor.md avisa para não usar a etiqueta fora de achado",
+      "porque": "D8: a régua é o formato, não o juízo",
+      "estagio": "executar",
+      "em": "2026-10-25T02:17:42.533Z"
+    }
+  ]
+}

@@ -621,6 +621,137 @@ function imprimirTabela(dados) {
   }
 }
 
+// Raiz do repositório desta execução. As sondas de alcance rodam nela, e não no
+// próprio worktree, para continuar funcionando quando o diretório já sumiu
+// (fantasma-travado). Definida em main().
+let raizAtual = null;
+
+/**
+ * Sha do HEAD de um worktree, lido de `git worktree list --porcelain` na raiz.
+ * Devolve null se a sonda falhou ou se o worktree não está registrado.
+ */
+function sondarHead(caminho) {
+  let saida;
+  try {
+    saida = execFileSync(caminhoExecutavel("git"), ["worktree", "list", "--porcelain"], {
+      cwd: raizAtual,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null;
+  }
+  const alvo = normalizarCaminho(caminho);
+  for (const bloco of saida.split(/\n\n+/)) {
+    const linhas = bloco.split("\n");
+    const wt = linhas.find((l) => l.startsWith("worktree "));
+    const head = linhas.find((l) => l.startsWith("HEAD "));
+    if (wt && head && normalizarCaminho(wt.slice("worktree ".length)) === alvo) {
+      return head.slice("HEAD ".length).trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * true se alguma branch local ou remota alcança o HEAD do worktree; false se
+ * nenhuma alcança (commit só no reflog); null se alguma sonda git falhou.
+ */
+function headAlcancavel(caminho) {
+  const sha = sondarHead(caminho);
+  if (sha === null) return null;
+  try {
+    const saida = execFileSync(
+      caminhoExecutavel("git"),
+      ["for-each-ref", "--contains", sha, "--format=%(refname)", "refs/heads", "refs/remotes"],
+      { cwd: raizAtual, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+    );
+    return saida.trim().length > 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Nome de ref a partir do nome da pasta. Caractere que ref git não aceita
+ * (espaço, controle, ~ ^ : ? * [ \), `..`, `@{`, ponto no início, ponto final
+ * e `.lock` final viram `-`. A validação final é `git check-ref-format`.
+ */
+function nomeDeArquivo(caminho) {
+  return path
+    .basename(caminho)
+    .replace(/[\x00-\x20\x7f~^:?*\[\\]/g, "-")
+    .replace(/@\{/g, "-")
+    .replace(/\.\./g, "-")
+    .replace(/^\./, "-")
+    .replace(/\.lock$/, "-")
+    .replace(/\.$/, "-");
+}
+
+/** Sha que a ref aponta; null se a ref não existe; ok:false se a leitura falhou. */
+function lerRef(git, ref) {
+  try {
+    const sha = execFileSync(git, ["rev-parse", "--verify", "-q", ref], {
+      cwd: raizAtual,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return { ok: true, sha };
+  } catch (e) {
+    // `rev-parse --verify -q` sai 1 quando a ref não existe; outro código é falha.
+    return e.status === 1 ? { ok: true, sha: null } : { ok: false, sha: null };
+  }
+}
+
+/**
+ * Grava refs/rainforest/arquivo/<nome-saneado> apontando para o sha. Pasta
+ * recriada ou de mesmo nome com outro commit já arquivado ganha
+ * <nome>-<sha7>. Ref que já aponta para o mesmo commit é reuso, não erro.
+ * Nunca sobrescreve: se nem o nome com sufixo está livre, para com erro e o
+ * comando para liberar.
+ */
+function arquivarHead(caminho, sha) {
+  const git = caminhoExecutavel("git");
+  const nome = nomeDeArquivo(caminho);
+  const base = `refs/rainforest/arquivo/${nome}`;
+  try {
+    execFileSync(git, ["check-ref-format", base], {
+      cwd: raizAtual,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+  } catch {
+    return { ok: false, motivo: `o nome '${nome}' não vira ref git válida` };
+  }
+  const primeira = lerRef(git, base);
+  if (!primeira.ok) return { ok: false, motivo: `não consegui ler ${base}` };
+  if (primeira.sha === sha) return { ok: true, ref: base };
+  let ref = base;
+  if (primeira.sha !== null) {
+    ref = `${base}-${sha.slice(0, 7)}`;
+    const segunda = lerRef(git, ref);
+    if (!segunda.ok) return { ok: false, motivo: `não consegui ler ${ref}` };
+    if (segunda.sha === sha) return { ok: true, ref };
+    if (segunda.sha !== null) {
+      return {
+        ok: false,
+        motivo:
+          `${base} aponta para ${primeira.sha.slice(0, 7)} e ${ref} para ` +
+          `${segunda.sha.slice(0, 7)}; para liberar: git update-ref -d ${ref}`,
+      };
+    }
+  }
+  try {
+    execFileSync(git, ["update-ref", ref, sha, "0".repeat(sha.length)], {
+      cwd: raizAtual,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (e) {
+    return { ok: false, motivo: `git update-ref falhou: ${e.stderr || e.message}` };
+  }
+  return { ok: true, ref };
+}
+
 /**
  * Executa remoção (para "limpo" e "fantasma-travado").
  */
@@ -657,6 +788,30 @@ function executarRemocao(raiz, dadosLimpos) {
     // D20: revalida no instante antes de remover
     if (pularSeMudou(item)) {
       continue;
+    }
+
+    // D5: só sai worktree cujo HEAD é alcançado por branch. HEAD destacado com
+    // commit próprio é arquivado em ref antes de sair; sonda que falha, não sai.
+    const alcancavel = headAlcancavel(item.caminhoOriginal);
+    if (alcancavel === null) {
+      console.error(
+        `erro: ${item.caminho} não removido: sonda git de alcance do HEAD falhou`
+      );
+      continue;
+    }
+    if (alcancavel === false) {
+      const sha = sondarHead(item.caminhoOriginal);
+      const arquivo = sha ? arquivarHead(item.caminhoOriginal, sha) : { ok: false, motivo: "HEAD não lido" };
+      if (!arquivo.ok) {
+        console.error(
+          `erro: ${item.caminho} não removido: ${arquivo.motivo}`
+        );
+        continue;
+      }
+      console.log(
+        `arquivado: ${arquivo.ref} aponta para ${sha.slice(0, 7)} ` +
+          `(HEAD de ${item.caminho} não é alcançado por nenhuma branch)`
+      );
     }
 
     if (classe === "fantasma-travado" && remover) {
@@ -734,6 +889,7 @@ function executarRemocao(raiz, dadosLimpos) {
  */
 function main() {
   const raiz = resolverRaiz();
+  raizAtual = raiz;
 
   // Detecta fantasmas-travados antes de listar tudo
   const fantasmas = detectarFantasmaTravado(raiz);
