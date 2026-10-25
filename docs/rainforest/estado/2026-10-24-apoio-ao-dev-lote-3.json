@@ -1,0 +1,111 @@
+{
+  "slug": "2026-10-24-apoio-ao-dev-lote-3",
+  "titulo": "2026-10-24-apoio-ao-dev-lote-3",
+  "criado_em": "2026-10-25",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-24-apoio-ao-dev-lote-3.md",
+    "em": "2026-10-25"
+  },
+  "plano": {
+    "status": "ok",
+    "doc": "docs/rainforest/planos/2026-10-24-apoio-ao-dev-lote-3.md",
+    "tarefas": 5,
+    "em": "2026-10-25"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-25",
+    "integradas": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "em_voo": [],
+    "em": "2026-10-25",
+    "tarefas_ok": 5,
+    "tarefas": 5,
+    "comando": "volta 1 da revisão: integrar-tarefa 4,3,1 (conferir-entrega + mutação) e T2 feita na janela (5bc42654); rodar-vizinhas com baterias-do-diff, conferir-entrega, conferir-ancoras-regras, conferir-ancoras, co-mudanca, aviso-duplicata, teto-skills, git-por-nome, integrar-tarefa, mapa-regras; node scripts/baterias-do-diff.cjs --base cc733290",
+    "saida": "3 integrações aceitas (47e66fa8, 5687efeb, e328c877); as 10 baterias exit 0 (baterias-do-diff 16/0, conferir-ancoras-regras 11/0, co-mudanca 6/0, aviso-duplicata 45/0, teto-skills 21 OK, conferir-ancoras 38 sem vermelhas); baterias-do-diff no diff real lista scripts/testa-teto-skills.sh e sai 3 por hooks/lib/config.cjs e scripts/lib/baterias-vizinhas.cjs (biblioteca compartilhada)",
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-baterias-do-diff.sh, caso arquivo que nenhuma bateria cita sai rodar tudo com exit 3"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-aviso-duplicata.sh, caso Write com function que já existe em outro arquivo rastreado avisa caminho:linha"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-ancoras-regras.sh, caso regra R3 sem Verificada em sai sem-campos e exit 1"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "vermelho",
+        "fixture": "testa-co-mudanca.sh, caso commit com mais de 20 arquivos não conta par"
+      },
+      {
+        "tarefa": 5,
+        "resultado": "n/a",
+        "motivo": "metadado de versão e documentação, sem comportamento a inverter"
+      }
+    ],
+    "reaberturas": 1
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "ff82f9163453e9b97e0b591f279d4599ac70d1c4",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "aefd7a4a3f1a59307",
+        "veredito": "ok",
+        "em": "2026-10-25",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind--claude-worktrees-apoio-ao-dev-lote-1/a8916a80-26c9-4137-b35b-c9bf409af105/subagents/agent-aefd7a4a3f1a59307.jsonl"
+      }
+    ],
+    "achados": 1,
+    "em": "2026-10-25",
+    "base": "cc733290",
+    "head": "HEAD"
+  },
+  "verificar": {
+    "status": "ok",
+    "comando": "bash scripts/testa-baterias-do-diff.sh; bash hooks/testa-aviso-duplicata.sh; bash scripts/testa-conferir-ancoras-regras.sh; bash scripts/testa-co-mudanca.sh; node -e (versão dos dois plugin.json); node scripts/conferir-fluxo.cjs cobertura --slug 2026-10-24-apoio-ao-dev-lote-3",
+    "saida": "tarefas 1-4: as quatro provas exit=0 (baterias-do-diff 16/0, aviso-duplicata 45/0, conferir-ancoras-regras 11/0, co-mudanca 6/0); tarefa 5: 1.77.0 / 1.77.0 e CHANGELOG casado com o diff pelo revisor da volta 1 (e a exceção de .md/docs/ conferida na volta 2b); cobertura válida — 8 decisão(ões), 5 tarefa(s)",
+    "sensor_externo": "node scripts/conferir-fluxo.cjs cobertura",
+    "em": "2026-10-25",
+    "head": "ff82f9163453e9b97e0b591f279d4599ac70d1c4"
+  },
+  "fechar": {
+    "status": "pendente"
+  },
+  "decididos": [
+    {
+      "pergunta": "hooks/testa-config.sh trava PostToolUse em um bloco só (custo de processo por evento, D12 de 2026-08-17)",
+      "escolha": "a guarda passa a aceitar exatamente os dois blocos: aviso-fluxo-shell em Bash|PowerShell e aviso-duplicata em Write|Edit|MultiEdit",
+      "porque": "edição é uma fração dos eventos de ferramenta e o hook sai cedo sem nome de definição; a trava segue barrando qualquer terceiro bloco",
+      "estagio": "executar",
+      "em": "2026-10-25T04:14:27.328Z"
+    },
+    {
+      "pergunta": "baterias-do-diff: .md alterado fica fora da selecao?",
+      "escolha": "nao: .md e docs/ nao geram duvida, mas listam a bateria que os cita",
+      "porque": "D3 diz que a duvida nunca estreita; 25 baterias leem SKILL.md e o teto de 16384 B so e pego por elas (revisao volta 1)",
+      "estagio": "executar",
+      "em": "2026-10-25T05:50:47.744Z"
+    }
+  ]
+}
