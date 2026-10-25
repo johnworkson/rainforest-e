@@ -507,6 +507,13 @@ function criarSchema(conexao, opcoes = {}) {
   // novos bancos (schema acima), e é adicionada em legados (sem erro se já existe).
   adicionarColunaSeFaltar(conexao, 'observacoes', 'consolidada_em', 'TEXT');
 
+  // Migração 4b: invalidado_em em resumos (D4). Resumo cuja fração de observações
+  // superadas chegou a LIMIAR_INVALIDA_RESUMO sai da abertura; banco antigo ganha a coluna aqui.
+  adicionarColunaSeFaltar(conexao, 'resumos', 'invalidado_em', 'TEXT');
+
+  // Migração 4c: posição servida em uso_memoria (D5). Linha antiga fica nula.
+  adicionarColunaSeFaltar(conexao, 'uso_memoria', 'posicao', 'INTEGER');
+
   // Migração 5: migração do FTS legado (C1).
   // Achado: CREATE VIRTUAL TABLE IF NOT EXISTS observacoes_fts é no-op quando
   // a tabela ANTIGA (`fts5(conteudo)` sem content=) existe — banco nunca migra
@@ -957,7 +964,8 @@ function resolverProjetoDaBusca(conexao, valor) {
 // devolve resultado vazio com exit 0, nunca erro.
 // `--desde`/`--ate` (D6): datas inclusivas sobre date(o.criada_em, 'localtime'), combináveis com
 // os demais filtros e com ou sem `--texto`. Data fora de AAAA-MM-DD ou impossível sai exit 2.
-// `buscar --texto`: mais relevante primeiro; empate (mesmo bm25) pelo mais recente.
+// `buscar --texto`: busca os candidatos por bm25 (esta ordem) e, em JS, reordena por proximidade
+// (reordenarPorProximidade). Empate pelo mais recente.
 const ORDEM_BUSCA_TEXTO = 'ORDER BY bm25(observacoes_fts), o.criada_em DESC';
 
 // Data no formato AAAA-MM-DD que existe no calendário (2026-02-30 e 2026-13-01 são recusadas).
@@ -966,6 +974,60 @@ function dataAAAAMMDDValida(valor) {
   const [ano, mes, dia] = valor.split('-').map(Number);
   const quando = new Date(Date.UTC(ano, mes - 1, dia));
   return quando.getUTCFullYear() === ano && quando.getUTCMonth() === mes - 1 && quando.getUTCDate() === dia;
+}
+
+// Tokens no critério do unicode61 do FTS5: minúsculo, sem acento, sequências de letras e números.
+function tokensBusca(texto) {
+  const sem = String(texto).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  return sem.match(/[\p{L}\p{N}]+/gu) || [];
+}
+
+// Termos distintos da consulta. AND/OR/NOT em maiúsculas são operadores do FTS5, não termos.
+function termosDaConsulta(texto) {
+  const palavras = (String(texto).match(/[\p{L}\p{N}]+/gu) || []).filter(p => !['AND', 'OR', 'NOT'].includes(p));
+  return [...new Set(tokensBusca(palavras.join(' ')))];
+}
+
+// Menor intervalo (em tokens, extremos incluídos) do conteúdo que contém todos os termos.
+// null quando falta algum termo ou a consulta tem um termo só: sem par, não há proximidade.
+function menorJanela(tokens, termos) {
+  if (termos.length < 2) return null;
+  const precisa = new Set(termos);
+  const ocorrencias = [];
+  tokens.forEach((t, i) => { if (precisa.has(t)) ocorrencias.push([i, t]); });
+  const contagem = new Map();
+  let presentes = 0;
+  let melhor = Infinity;
+  let esq = 0;
+  for (let dir = 0; dir < ocorrencias.length; dir++) {
+    const t = ocorrencias[dir][1];
+    contagem.set(t, (contagem.get(t) || 0) + 1);
+    if (contagem.get(t) === 1) presentes++;
+    while (presentes === precisa.size) {
+      melhor = Math.min(melhor, ocorrencias[dir][0] - ocorrencias[esq][0] + 1);
+      const u = ocorrencias[esq][1];
+      contagem.set(u, contagem.get(u) - 1);
+      if (contagem.get(u) === 0) presentes--;
+      esq++;
+    }
+  }
+  return melhor === Infinity ? null : melhor;
+}
+
+// Reordena os candidatos do bm25: final = s * (1 + prox), com s = -bm25 (maior = mais relevante).
+// Empate em final cai no mais recente. Devolve só os campos de saída (o score não sai).
+function reordenarPorProximidade(linhas, termos) {
+  const comNota = linhas.map(l => {
+    const janela = menorJanela(tokensBusca(l.conteudo), termos);
+    const s = -l.score;
+    const prox = janela === null ? 0 : 1 / (1 + janela / termos.length);
+    return { l, final: s * (1 + prox) };
+  });
+  comNota.sort((a, b) => (b.final - a.final)
+    || (a.l.criada_em < b.l.criada_em ? 1 : a.l.criada_em > b.l.criada_em ? -1 : 0));
+  return comNota.map(({ l }) => ({
+    id: l.id, projeto: l.projeto, conteudo: l.conteudo, criada_em: l.criada_em, trecho: l.trecho,
+  }));
 }
 
 function cmdBuscar() {
@@ -1042,7 +1104,9 @@ function cmdBuscar() {
       // o FTS só filtrava, e o primeiro resultado era o mais recente que casava
       // (revisita do context-mode, 2026-10-15). Mesma forma de `buscarCandidatas`.
       query = `
-        SELECT o.id, o.projeto, o.conteudo, o.criada_em
+        SELECT o.id, o.projeto, o.conteudo, o.criada_em,
+          snippet(observacoes_fts, 0, '[', ']', '…', 12) AS trecho,
+          bm25(observacoes_fts) AS score
         FROM observacoes_fts
         JOIN observacoes o ON o.id = observacoes_fts.rowid
         WHERE observacoes_fts MATCH ?
@@ -1060,7 +1124,10 @@ function cmdBuscar() {
     if (ate) { filtros.push("date(o.criada_em, 'localtime') <= ?"); params.push(ate); }
     for (const filtro of filtros) query += ` AND ${filtro}`;
 
-    params.push(limite);
+    // Com --texto, busca max(limite, 50) candidatos para o rerank; o corte em --limite vem depois.
+    // Limite negativo é o LIMIT -1 do SQLite (todos), como antes do rerank.
+    const semTeto = limite < 0;
+    params.push(texto && !semTeto ? Math.max(limite, 50) : limite);
     query += (texto ? ` ${ORDEM_BUSCA_TEXTO}` : ' ORDER BY criada_em DESC') + ' LIMIT ?';
 
     const stmt = conexao.prepare(query);
@@ -1075,6 +1142,10 @@ function cmdBuscar() {
       if (!termos) throw e;
       params[0] = termos.map(t => `"${t}"`).join(' ');
       resultados = termos.length ? stmt.all(...params) : [];
+    }
+    // D3: reordena por proximidade e só então corta em --limite.
+    if (texto) {
+      resultados = reordenarPorProximidade(resultados, termosDaConsulta(texto)).slice(0, semTeto ? undefined : limite);
     }
     // D7: zero resultados na saída humana conta o escopo com a mesma conexão, sem texto e sem
     // data. Falha aqui cai no catch de erro de banco, igual à busca.
@@ -1124,7 +1195,7 @@ function cmdBuscar() {
     }
     for (const obs of resultados) {
       console.log(`[${obs.id}] ${obs.projeto} - ${obs.criada_em}`);
-      console.log(`  ${obs.conteudo.substring(0, 100)}`);
+      console.log(`  ${obs.trecho || obs.conteudo.substring(0, 100)}`);
     }
   }
 }
@@ -1786,6 +1857,38 @@ const TETO_RECONCILIAR = 200;
 // entendemos).
 const ACOES_RECONCILIACAO_VALIDAS = new Set(['store', 'update', 'merge', 'skip']);
 
+// D4: resumo sai da abertura quando a fração de observações dele já superadas chega
+// a este limiar (medido em 2026-10-25: 1 de 30 é ruído; 1 de 4 é o resumo derivado
+// de conteúdo que já não vale).
+const LIMIAR_INVALIDA_RESUMO = 0.25;
+
+// D4: observação superada que tem consolidada_em derruba o resumo do mesmo
+// projeto e mesmo instante (criada_em = consolidada_em), se a fração superada
+// chegou ao limiar. Chamada dentro da transação de aplicarDecisaoReconciliacao.
+// Sem a coluna (banco antigo que a migração ainda não tocou) não faz nada.
+function invalidarResumoDaSuperada(conexao, idSuperada, agora) {
+  const temInvalidado = conexao.prepare('PRAGMA table_info(resumos)').all().some((c) => c.name === 'invalidado_em');
+  if (!temInvalidado) return;
+
+  const sup = conexao.prepare('SELECT projeto, consolidada_em FROM observacoes WHERE id = ?').get(idSuperada);
+  if (!sup || !sup.consolidada_em) return;
+
+  const resumo = conexao.prepare('SELECT id, invalidado_em FROM resumos WHERE projeto = ? AND criada_em = ?')
+    .get(sup.projeto, sup.consolidada_em);
+  if (!resumo || resumo.invalidado_em) return;
+
+  const contagem = conexao.prepare(`
+    SELECT COUNT(*) AS total,
+           SUM(CASE WHEN substituida_por IS NOT NULL THEN 1 ELSE 0 END) AS superadas
+    FROM observacoes
+    WHERE projeto = ? AND consolidada_em = ?
+  `).get(sup.projeto, sup.consolidada_em);
+
+  if (contagem.total > 0 && contagem.superadas / contagem.total >= LIMIAR_INVALIDA_RESUMO) {
+    conexao.prepare('UPDATE resumos SET invalidado_em = ? WHERE id = ?').run(agora, resumo.id);
+  }
+}
+
 // Constrói uma query MATCH segura para o FTS5 a partir de texto livre.
 // Passar o conteúdo cru (com pontuação, aspas, dois-pontos) direto como MATCH
 // quebra a sintaxe do FTS5 (reservada para AND/OR/NOT/coluna:termo/etc). Aqui
@@ -2064,6 +2167,7 @@ function aplicarDecisaoReconciliacao(conexao, obs, decisao, candidatas = []) {
       if (decisao.acao === 'update') {
         conexao.prepare('UPDATE observacoes SET substituida_por = ?, reconciliada_em = ? WHERE id = ?')
           .run(obs.id, agora, alvo.id);
+        invalidarResumoDaSuperada(conexao, alvo.id, agora);
         conexao.prepare('UPDATE observacoes SET reconciliada_em = ? WHERE id = ?')
           .run(agora, obs.id);
       } else {
@@ -2090,8 +2194,10 @@ function aplicarDecisaoReconciliacao(conexao, obs, decisao, candidatas = []) {
 
         conexao.prepare('UPDATE observacoes SET substituida_por = ?, reconciliada_em = ? WHERE id = ?')
           .run(novoId, agora, obs.id);
+        invalidarResumoDaSuperada(conexao, obs.id, agora);
         conexao.prepare('UPDATE observacoes SET substituida_por = ?, reconciliada_em = ? WHERE id = ?')
           .run(novoId, agora, alvo.id);
+        invalidarResumoDaSuperada(conexao, alvo.id, agora);
         // A própria síntese nasce reconciliada: ela é o RESULTADO da
         // reconciliação da sondada com o alvo, não mais uma pendência. Sem
         // isto, ela reentraria em `pendentes` na próxima execução e seria
@@ -2454,7 +2560,7 @@ if (require.main === module) {
 module.exports = {
   abrirBanco, abrirBancoSomenteLeitura, criarSchema, extrairSchema, popularFts5,
   resolverCaminhos, verificarConstraintUniqueProjetoOrigem, encontrarGit, fazerBackupDoBanco,
-  K_CANDIDATAS, TETO_RECONCILIAR, construirQueryFts5, buscarCandidatas,
+  K_CANDIDATAS, TETO_RECONCILIAR, LIMIAR_INVALIDA_RESUMO, construirQueryFts5, buscarCandidatas,
   interpretarDecisaoReconciliacao, aplicarDecisaoReconciliacao,
   formatarPromptReconciliacao,
   filtroVivas, DIAS_CONSOLIDACAO, TETO_GRUPOS,

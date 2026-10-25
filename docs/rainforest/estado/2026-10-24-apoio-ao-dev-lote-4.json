@@ -1,0 +1,100 @@
+{
+  "slug": "2026-10-24-apoio-ao-dev-lote-4",
+  "titulo": "Apoio ao dev, lote 4: memoria",
+  "criado_em": "2026-10-25",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-24-apoio-ao-dev-lote-4.md",
+    "em": "2026-10-25"
+  },
+  "plano": {
+    "status": "ok",
+    "doc": "docs/rainforest/planos/2026-10-24-apoio-ao-dev-lote-4.md",
+    "em": "2026-10-25"
+  },
+  "executar": {
+    "status": "ok",
+    "integradas": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "em_voo": [],
+    "em": "2026-10-25",
+    "catraca_mutacao": "2026-10-25",
+    "tarefas_ok": 4,
+    "tarefas": 4,
+    "comando": "correção da revisão volta 1 (feita na janela): bash scripts/testa-memoria-cascata.sh; bash scripts/testa-memoria-proximidade.sh; bash scripts/testa-utilidade-posicao.sh; vizinhas testa-memoria, testa-memoria-vazio-explicado, testa-memoria-reconciliar; node scratchpad/mutar-l4v2.cjs (5 mutações numa cópia fora do worktree)",
+    "saida": "cascata 21/0, proximidade 10/0, posicao 6/0; vizinhas 42/0, 9 sem vermelhas, 19/0; as 5 mutações (as duas chamadas do merge, o slice do limite negativo, as bordas 1-4 e 4-8 da faixa) ficam vermelhas com 1 FALHA cada",
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-memoria-proximidade.sh, caso termos juntos vêm antes de termos espalhados com bm25 parecido"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-memoria-cascata.sh, caso resumo de observação superada não entra na abertura"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-utilidade-posicao.sh, caso a terceira linha do bloco grava posicao 3"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "n/a",
+        "motivo": "metadado de versão e documentação, sem comportamento a inverter"
+      }
+    ],
+    "reaberturas": 1
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "852b8ca442d11edcc43c7dd82d45c886a7289528",
+      "caminhos_sujos": [
+        "docs/rainforest/estado/2026-10-24-apoio-ao-dev-lote-4.json"
+      ]
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a9ecc1994ee254b71",
+        "veredito": "ok",
+        "em": "2026-10-25",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind--claude-worktrees-apoio-ao-dev-lote-1/a8916a80-26c9-4137-b35b-c9bf409af105/subagents/agent-a9ecc1994ee254b71.jsonl"
+      }
+    ],
+    "achados": 1,
+    "motivo": "[media] cascata do merge sem prova; [baixa] bordas da faixa; [baixa] --limite negativo",
+    "em": "2026-10-25",
+    "base": "d6857256",
+    "head": "HEAD"
+  },
+  "verificar": {
+    "status": "ok",
+    "comando": "bash scripts/testa-memoria-proximidade.sh; bash scripts/testa-memoria-cascata.sh; bash scripts/testa-utilidade-posicao.sh; node -e (versão dos dois plugin.json); node scripts/conferir-fluxo.cjs cobertura --slug 2026-10-24-apoio-ao-dev-lote-4",
+    "saida": "tarefas 1-3: as três provas exit=0 (memoria-proximidade 10/0, memoria-cascata 21/0, utilidade-posicao 6/0); tarefa 4: 1.78.0 / 1.78.0 e CHANGELOG casado com o diff pelo revisor (volta 1 e volta 2); cobertura válida — 6 decisão(ões), 4 tarefa(s)",
+    "sensor_externo": "node scripts/conferir-fluxo.cjs cobertura",
+    "em": "2026-10-25",
+    "head": "852b8ca442d11edcc43c7dd82d45c886a7289528"
+  },
+  "fechar": {
+    "status": "pendente"
+  },
+  "decididos": [
+    {
+      "pergunta": "D10 de testa-utilidade.sh lista as colunas de uso_memoria exatas; posicao entra?",
+      "escolha": "sim: a lista passa a incluir posicao",
+      "porque": "D10 proibe texto livre em uso_memoria; posicao e INTEGER e e o que o D5 pede",
+      "estagio": "executar",
+      "em": "2026-10-25T07:23:54.835Z"
+    }
+  ]
+}
