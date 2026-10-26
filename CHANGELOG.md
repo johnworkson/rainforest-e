@@ -10,6 +10,10 @@ que existe delas é o commit de release (`git log --grep="^Versao "`), e reescre
 29 releases de memória produziria nota bonita e errada. Versão nova daqui em diante
 entra aqui no mesmo commit que sobe o `version` do `plugin.json`.
 
+## 1.80.1 — 2026-10-25
+
+- **Editar pela junction com o cwd dentro dela não se acusa mais.** O conserto do 8.3 na 1.80.0 resolvia o cwd para achar o nome da junction rastreada. Com o cwd dentro da própria junction (`<repo>/jn`), resolver o cwd caía no alvo, e o `aviso-duplicata` acusava o arquivo editado como duplicata de `jn/x.cjs`; com o cwd em 8.3 e dentro da junction ao mesmo tempo, nem o nome sem resolver da 1.79.0 casava. O nome da junction agora sai subindo do arquivo até o ancestral cujo caminho real é o do toplevel do git, e o que fica abaixo dele não se resolve (`relativoAoTopo` em `hooks/aviso-duplicata.cjs`). `testa-caminho-real.sh` ganha os casos do cwd dentro da junction, com e sem 8.3.
+
 ## 1.80.0 — 2026-10-25
 
 Sexto e último lote da rodada apoio ao dev, tema ferramentas do fluxo. Desenho e decisões D1 a D11 em
