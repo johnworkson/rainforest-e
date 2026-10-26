@@ -110,31 +110,8 @@ Quem a executa é um `tester` isolado em worktree.
 
 ### Backstop de mutação (Issue #4)
 
-`exigir --estagio revisar` **captura um instantâneo**:
-o `HEAD` do repositório e a lista de caminhos sujos (`git status --porcelain`).
-Depois, `marcar --estagio revisar --status ok` **compara** esse instantâneo e
-recusa (exit 2) se:
-
-1. **HEAD mexeu** — qualquer movimento reprova. Se o HEAD andou, a base do diff
-   que você revisou mudou, e a revisão foi feita contra outra árvore. A mensagem
-   distingue "você commitou" de "outra janela commitou" e diz o que fazer: re-rode
-   `exigir revisar` e revise novamente.
-
-2. **Caminho sujo NOVO** — arquivo que não estava no instantâneo mas aparece agora.
-   A comparação usa **conjuntos, não contagem**: sujeira pré-existente é legítima
-   (outro trabalho em andamento no mesmo clone) e não reprova. Só caminho novo
-   recusa.
-
-   Uma exceção, e ela é o próprio mecanismo: `docs/rainforest/estado/<slug>.json`
-   sai da comparação. É o `exigir` que o suja, ao gravar ali o instantâneo que
-   acabou de tirar — e o arquivo é versionado neste repo. Sem a exceção a trava
-   recusa o caminho feliz **sempre**, porque acusa de mutação a escrita que ela
-   mesma fez. A bookkeeping da trava não pode ser evidência contra o revisor.
-
-Se o instantâneo não existir (slug que fechou `revisar` sem passar pelo novo
-`exigir`), **avise e não trave** — travar retroativo quebra trabalho em andamento.
-O instantâneo fica gravado no arquivo de estado (`docs/rainforest/estado/<slug>.json`)
-e sobrevive entre sessões.
+`exigir --estagio revisar` tira um instantâneo (HEAD e caminhos sujos) e `marcar revisar ok` recusa se o HEAD
+mexeu ou se apareceu caminho sujo novo. Detalhe e a exceção do arquivo de estado: `references/backstop-de-mutacao.md`.
 
 ## Creep: medido contra o plano, não contra o gosto
 
@@ -144,6 +121,7 @@ Isto é **distinto** de "eu faria diferente":
 
 - **Estilo** ("não é assim que eu escreveria", "deixaria mais limpo"): só entra se violar padrão documentado do repo. Senão, é gosto, não achado.
 - **Creep** ("esse arquivo não era pra ser tocado", "essa mudança não estava no plano"): arquivo no diff que não casa com nenhum `arquivos:` da tarefa. Sempre reprova.
+- **Preexistente** (defeito que já estava na base do diff; a entrega não o criou): leva a marca `[preexistente]` depois da severidade, como `**[alta]** [preexistente] arquivo:linha — ...`. Antes de marcar, confira com `git show <base>:<arquivo>` que o trecho já estava lá, com `<base>` = `git merge-base HEAD origin/main`, e cite a linha pela numeração do HEAD. Sem `arquivo:linha`, a marca é recusada. A marca não reprova a entrega sozinha: o hook e a crítica conferem por máquina se a linha citada cai num trecho que o diff adicionou ou alterou. Se cai, a marca é recusada e o achado bloqueia como qualquer outro. Preexistente aceito vai à seção `## Preexistentes` da crítica, para virar Issue (regra 6), não correção do executor.
 
 ### Saída única: emendar o plano
 

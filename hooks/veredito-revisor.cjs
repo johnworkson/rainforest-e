@@ -52,7 +52,8 @@ const { caminhoExecutavel } = require(path.join(__dirname, 'lib', 'resolver-exec
 const { primeiroPrompt, extrairSlug, ultimaMensagemAssistente } = require(path.join(__dirname, '..', 'scripts', 'lib', 'primeiro-prompt-jsonl.cjs'));
 const { extrairUltimaLinha, validarVocabulario } = require(path.join(__dirname, '..', 'scripts', 'lib', 'extrair-veredito.cjs'));
 const { ehWorktreeDeAgente } = require(path.join(__dirname, 'lib', 'contexto-sessao.cjs'));
-const { contarAchados, incoerencia } = require(path.join(__dirname, 'lib', 'achados-revisor.cjs'));
+const { contarAchados, incoerencia, preexistentesNoDiff, tirarMarcaPreexistente } = require(path.join(__dirname, 'lib', 'achados-revisor.cjs'));
+const { caminhoTranscritoSubagente } = require(path.join(__dirname, 'lib', 'transcrito-subagente.cjs'));
 
 const VOCAB_ULTIMA_LINHA = ['veredito: ok', 'veredito: reprovado'];
 
@@ -163,30 +164,6 @@ function raizComEstadoDoSlug(repoRoot, slug) {
   return null;
 }
 
-/**
- * Caminho do transcrito do SUBAGENTE. `agent_transcript_path` quando o
- * payload trouxer; senão o fallback que bateu byte a byte na captura da
- * task 1: `<dirname(transcript_path)>/<session_id>/subagents/agent-<agent_id>.jsonl`.
- */
-function caminhoTranscritoSubagente(payload) {
-  if (typeof payload.agent_transcript_path === 'string' && payload.agent_transcript_path) {
-    return payload.agent_transcript_path;
-  }
-  if (
-    typeof payload.transcript_path === 'string' && payload.transcript_path
-    && typeof payload.session_id === 'string' && payload.session_id
-    && typeof payload.agent_id === 'string' && payload.agent_id
-  ) {
-    return path.join(
-      path.dirname(payload.transcript_path),
-      payload.session_id,
-      'subagents',
-      `agent-${payload.agent_id}.jsonl`,
-    );
-  }
-  return null;
-}
-
 function main() {
   let payload;
   try {
@@ -237,7 +214,12 @@ function main() {
   // D3 (lote 2): o veredito tem de bater com os achados da MESMA mensagem que
   // o deu. `ok` com [alta] e `reprovado` sem achado marcado viram `invalido`
   // e seguem o caminho do invalido abaixo (devolvem a vez na primeira parada).
-  const achados = contarAchados(mensagem);
+  // D3/D9 (lote 6): marca [preexistente] na linha que o diff toca é recusada
+  // aqui — volta a contar como bloqueio. Sem base, a marca vale como escrita.
+  const recusadas = preexistentesNoDiff(mensagem, payload.cwd);
+  if (recusadas === null) process.stderr.write('marca [preexistente] não conferida: sem base\n');
+  for (const r of recusadas || []) process.stderr.write(`marca [preexistente] recusada: ${r.motivo}\n`);
+  const achados = contarAchados(tirarMarcaPreexistente(mensagem, recusadas || []));
   const motivoIncoerencia = incoerencia(veredito, achados);
   if (veredito === 'ok' && achados.alta > 0) veredito = 'invalido';
   if (veredito === 'reprovado' && achados.total === 0) veredito = 'invalido';
@@ -295,7 +277,9 @@ function main() {
     // quando setado (sandbox de teste), não é tocado e continua vencendo tudo.
     spawnSync(process.execPath, args, {
       cwd: raizEstado,
-      env: { ...process.env, CLAUDE_PROJECT_DIR: raizEstado },
+      // RFM_DIFF_CWD: o estado.cjs recusa a marca [preexistente] pelo mesmo diff
+      // que este hook usou (payload.cwd), não pelo da raiz do estado.
+      env: { ...process.env, CLAUDE_PROJECT_DIR: raizEstado, RFM_DIFF_CWD: payload.cwd },
       stdio: 'ignore',
     });
   } catch {
