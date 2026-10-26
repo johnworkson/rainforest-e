@@ -194,10 +194,57 @@ def dispara_refresh():
         pass
 
 
-def segmento_tempo():
+def raiz_do_principal(cwd):
+    """Espelho do `raizDoPrincipal` do hooks/lib/config.cjs: dentro de worktree ou
+    subdiretorio, o `.rainforest/config.json` do projeto mora no checkout principal."""
+    comum = git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    comum = comum.rstrip("/\\")
+    if comum and os.path.basename(comum) == ".git":
+        return os.path.dirname(comum)
+    return cwd
+
+
+def valor_foco(caminho):
+    """`True`/`False` gravado no config.json, ou `None` (sem arquivo, sem chave,
+    ilegivel, tipo errado): `None` deixa o arquivo seguinte da cadeia decidir."""
+    try:
+        with open(caminho, "r", encoding="utf-8") as f:
+            valor = json.load(f).get("foco")
+    except Exception:
+        return None
+    return valor if isinstance(valor, bool) else None
+
+
+_FOCO_LIGADO = {}
+
+
+def foco_ligado(cwd):
+    """Chave `foco` (2.0.0, D6): so `true` gravado liga. A mesma cadeia do
+    `resolverConfig` do hooks/lib/config.cjs: o config do projeto (no checkout
+    principal) vence o da pasta de dados; qualquer erro conta como desligado."""
+    if cwd in _FOCO_LIGADO:
+        return _FOCO_LIGADO[cwd]
+    ligado = False
+    try:
+        no_projeto = valor_foco(os.path.join(raiz_do_principal(cwd), ".rainforest", "config.json")) if cwd else None
+        if no_projeto is not None:
+            ligado = no_projeto
+        else:
+            raiz_dados = resolver_raiz_dados(cwd)
+            ligado = bool(raiz_dados) and valor_foco(os.path.join(raiz_dados, "config.json")) is True
+    except Exception:
+        ligado = False
+    _FOCO_LIGADO[cwd] = ligado
+    return ligado
+
+
+def segmento_tempo(cwd=None):
     agora = datetime.datetime.now()
     cor_relogio = VERMELHO if agora.hour >= 19 else CINZA
     partes = [c(agora.strftime("%Hh%M"), cor_relogio)]
+    # Sem o foco, a barra mostra so o relogio: a jornada nao sai nem le o cache.
+    if not foco_ligado(cwd):
+        return partes[0]
 
     valor = ""
     try:
@@ -293,7 +340,10 @@ def datas_de_compromisso(linha, hoje):
     return achadas
 
 
-def segmento_prazo():
+def segmento_prazo(cwd=None):
+    # 2.0.0 (D6): sem o foco, o prazo nao sai nem le o FOCO.md.
+    if not foco_ligado(cwd):
+        return ""
     try:
         with open(FOCO, "r", encoding="utf-8") as fh:
             texto = secoes_de_prazo(fh.read())
@@ -714,11 +764,11 @@ def montar_segmentos(dados):
         modelo,
         contexto,
         lambda: segmento_limites(dados.get("rate_limits")),
-        segmento_tempo,
+        lambda: segmento_tempo(cwd),
         lambda: segmento_escada_intensidade(cwd),
         lambda: segmento_co_locada(cwd),
         lambda: segmento_versao(transcript_path),
-        segmento_prazo,
+        lambda: segmento_prazo(cwd),
     )
     segmentos = []
     for fabrica in fabricas:
