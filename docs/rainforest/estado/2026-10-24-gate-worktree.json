@@ -1,0 +1,210 @@
+{
+  "slug": "2026-10-24-gate-worktree",
+  "titulo": "gate-worktree: #573 #580 #582 #583",
+  "criado_em": "2026-10-24",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-24-gate-worktree.md",
+    "em": "2026-10-24"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-24-gate-worktree.md",
+    "tarefas": 7,
+    "paralelas": [],
+    "em": "2026-10-24"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-26",
+    "tarefas_ok": 7,
+    "tarefas": 7,
+    "integradas": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "em_voo": [],
+    "comando": "node scripts/rodar-longo.cjs iniciar --saida gw-t16.txt -- bash hooks/testa-gate-worktree.sh; bash scripts/testa-versao.sh; node scripts/conferir-versao.cjs; corpus do gate; node scripts/conferir-fluxo.cjs mutacoes --slug 2026-10-24-gate-worktree; merge da origin/main (4cfff569, #603); bash scripts/testa-versao.sh; node scripts/conferir-versao.cjs; diff --stat 96cd278..HEAD em hooks/; conserto do CI do #605: bash scripts/testa-dependencias-de-bateria.sh; bash hooks/testa-gate-worktree.sh",
+    "saida": "baseline e455fb40: testa-gate-worktree 813 ok 0 falha; HEAD b1322560: 886 ok 0 falha; corpus 24/0; testa-versao 5/0; conferir-versao exit 0. Catraca: tarefas 1-6 vermelho, 7 pulada (n/a), exit 0, arvore limpa depois. Revisao 1 reprovou (1 media, 4 baixas); conserto 68113261: bateria 905 ok 0 falha (+19 casos), 7 mutacoes manuais vermelhas (continuacao, agrupamento filtro/parentese, mv origem, -t colado/combinado, heredoc no cd -). Reaberto porque o #603 entrou antes como 2.0.3: merge da main em 5d0a6bda, versao 2.0.4 (manifestos, selo, CHANGELOG acima da 2.0.3, plano e design); testa-versao 5/0; conferir-versao ok 2.0.4 (origin/main 2.0.3); diff de hooks/ entre 96cd278 e HEAD vazio (gate e bateria iguais aos verificados, 905/0). Reaberto pelo CI do #605 (shard 3: testa-dependencias-de-bateria leu python em posicao de comando em 3 casos da bateria). Conserto 58ccf3a1 reescreve so o texto, mesmo comando: testa-dependencias-de-bateria 6 ok 0 falha; testa-gate-worktree 905 ok 0 falha (contagem igual). Shard 2 (testa-rodar-longo, PID vivo) fora do diff desta branch.",
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "hooks/testa-gate-worktree.sh: destino com expansao no inicio (#580)"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "hooks/testa-gate-worktree.sh: escritores da rede com alvo expandido (D2)"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "hooks/testa-gate-worktree.sh: regressao do argumento de comando desconhecido (#582)"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "vermelho",
+        "fixture": "hooks/testa-gate-worktree.sh: comando dinamico com cwd no worktree (#583)"
+      },
+      {
+        "tarefa": 5,
+        "resultado": "vermelho",
+        "fixture": "hooks/testa-gate-worktree.sh: mensagem do cd - so com a causa da linha (#573)"
+      },
+      {
+        "tarefa": 6,
+        "resultado": "vermelho",
+        "fixture": "hooks/testa-gate-worktree.sh: bloqueio da camada git com cd - cita o cd - (#573)"
+      },
+      {
+        "tarefa": 7,
+        "resultado": "n/a",
+        "motivo": "documentacao e numero de versao"
+      }
+    ],
+    "em": "2026-10-26",
+    "reaberturas": 1
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "1b44ae98edfa5e0e9e3b3c4b7b14cecd3d95a5b3",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "ab98454838518dfd8",
+        "veredito": "ok",
+        "em": "2026-10-26",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind--claude-worktrees-apoio-ao-dev-lote-1/a8916a80-26c9-4137-b35b-c9bf409af105/subagents/agent-ab98454838518dfd8.jsonl"
+      }
+    ],
+    "base": "4cfff569",
+    "head": "HEAD",
+    "achados": [
+      {
+        "severidade": "baixa",
+        "descricao": "dica do cd - nao mascara heredoc sem aspas (<<EOF); conservador, so mensagem. CHANGELOG ganhou a ressalva em 87f6871f"
+      },
+      {
+        "severidade": "baixa",
+        "descricao": "continuacao dentro da palavra (touch \"$\\<nl>X/f\") ainda escapa; base tambem 0"
+      },
+      {
+        "severidade": "baixa",
+        "descricao": "opcao longa com valor separado (touch --reference \"$X\" f) e lida como alvo; falso positivo raro"
+      },
+      {
+        "severidade": "baixa",
+        "descricao": "heredoc sem aspas com touch \"$X/f\" no corpo barra; conservador"
+      },
+      {
+        "severidade": "baixa",
+        "descricao": "cosmetico: alvo de (touch \"$X/f\") aparece como $X/f)"
+      },
+      {
+        "severidade": "baixa",
+        "descricao": "rodada 6 (conserto do CI do #605, 58ccf3a1): strings entregues ao gate identicas byte a byte (md5), dependencias 6/0, gate 905/0; nome do caso g583 virou rotulo sem o comando literal, so rotulo"
+      }
+    ],
+    "em": "2026-10-26",
+    "voltas": [
+      {
+        "volta": 1,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a9543faad40f48f82",
+            "veredito": "reprovado",
+            "em": "2026-10-26",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind--claude-worktrees-apoio-ao-dev-lote-1/a8916a80-26c9-4137-b35b-c9bf409af105/subagents/agent-a9543faad40f48f82.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 2,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a90bcc1b6e786f10e",
+            "veredito": "ok",
+            "em": "2026-10-26",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind--claude-worktrees-apoio-ao-dev-lote-1/a8916a80-26c9-4137-b35b-c9bf409af105/subagents/agent-a90bcc1b6e786f10e.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 3,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a7f1f5f43f03da2c0",
+            "veredito": "ok",
+            "em": "2026-10-26",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind--claude-worktrees-apoio-ao-dev-lote-1/a8916a80-26c9-4137-b35b-c9bf409af105/subagents/agent-a7f1f5f43f03da2c0.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 4,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "ac420aaa0804fd865",
+            "veredito": "ok",
+            "em": "2026-10-26",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind--claude-worktrees-apoio-ao-dev-lote-1/a8916a80-26c9-4137-b35b-c9bf409af105/subagents/agent-ac420aaa0804fd865.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 5,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a70463201fad39027",
+            "veredito": "ok",
+            "em": "2026-10-26",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind--claude-worktrees-apoio-ao-dev-lote-1/a8916a80-26c9-4137-b35b-c9bf409af105/subagents/agent-a70463201fad39027.jsonl"
+          }
+        ]
+      }
+    ],
+    "veredito": "ok",
+    "rodadas": 3
+  },
+  "verificar": {
+    "status": "ok",
+    "comando": "node scripts/rodar-longo.cjs iniciar --saida gw-verif2.txt -- bash hooks/testa-gate-worktree.sh; bash scripts/testa-versao.sh; node scripts/conferir-versao.cjs; node scripts/conferir-fluxo.cjs cobertura --slug 2026-10-24-gate-worktree; node hooks/testa-corpus-comandos.cjs; bash scripts/testa-dependencias-de-bateria.sh",
+    "saida": "HEAD 1b44ae9 (conserto do CI 58ccf3a1) (main 4cfff569 trazida, 2.0.4): testa-gate-worktree 905 ok 0 falha(s) exit 0 (tarefas 1-6); testa-versao ok 5 falhou 0 e conferir-versao ok 2.0.4 contra origin/main 2.0.3 (tarefa 7); CHANGELOG 2.0.4 cita #573 #580 #582 #583 com D1-D5, acima da 2.0.3; README linha 183 descreve alvo de escritor com expansao no inicio; corpus ok 24 falhou 0 (medido em 87f6871f; hooks/ igual desde entao); cobertura valida 6 decisoes, 7 tarefas; testa-dependencias-de-bateria 6 ok 0 falha (CI do #605 shard 3)",
+    "sensor_externo": "node scripts/conferir-fluxo.cjs cobertura",
+    "em": "2026-10-26",
+    "head": "1b44ae98edfa5e0e9e3b3c4b7b14cecd3d95a5b3"
+  },
+  "fechar": {
+    "status": "pendente",
+    "em": "2026-10-26"
+  },
+  "reaberturas": [
+    {
+      "em": "2026-10-26",
+      "de": "verificar",
+      "motivo": "PR #603 mergeou 2.0.3 na main antes; trazer a main e subir a versao para 2.0.4"
+    },
+    {
+      "em": "2026-10-26",
+      "de": "revisar",
+      "motivo": "CI do #605: varredura de dependencias leu python em posicao de comando em 3 casos da bateria; reescritos sem mudar o comando (58ccf3a1)"
+    }
+  ]
+}

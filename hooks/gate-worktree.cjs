@@ -1752,6 +1752,49 @@ function soComandosInertes(texto) {
     return COMANDOS_INERTES.has(cmd) && !(cmd === "printf" && sub === "-v");
   });
 }
+// `cd -`/`pushd -` fora de aspas: a mesma regex do ramo `medivel` de `alvosDaRede` e de `dicaDoCdMenos`.
+const CD_MENOS = /(^|[\s;&|(`{])(?:cd|pushd)[ \t]+-(?=$|[\s;&|)}#<>])/;
+
+/**
+ * #573 (D5): trecho que o bloqueio da camada de git acrescenta quando a linha usa `cd -`, com a
+ * mesma saida da rede. Aspas sem expansao sao mascaradas antes (`git commit -m "cd - e outras"`
+ * nao conta), e o corpo de heredoc tambem; `cd "-"` conta. Sem `cd -`, devolve "".
+ */
+function dicaDoCdMenos(comando) {
+  const texto = mascaraAspasBash(mascaraHeredocsBash(String(comando)).replace(/(["'])-\1/g, "-")).replace(/["'\\]/g, "");
+  if (!CD_MENOS.test(texto)) return "";
+  return "\nA linha usa `cd -` (volta ao diretorio anterior): o gate nao sabe para onde ele leva.\n" +
+    "Saida: troque o `cd -` pelo caminho absoluto do diretorio (`cd /caminho/do/worktree`).";
+}
+
+/**
+ * #573 (D5): os construtos da linha que impedem medir o `cd -`, na ordem: substituicao (`$(`,
+ * `<(`/`>(`), crase, interpretador com `-c`/`-e`, `source`/`.`, `eval` e definicao de variavel.
+ * Reaproveita `EXECUCAO_INDIRETA`, `FONTE_DE_SCRIPT` e `DEFINE_VARIAVEL`, testadas sobre o mesmo
+ * texto que `casaRedefinida` usa. Nunca devolve lista vazia.
+ */
+function causasDoCdMenos(comando) {
+  const junto = String(comando).replace(/\\\r?\n/g, "");
+  const semAspas = junto.replace(/["'\\]/g, "");
+  const causas = [];
+  const poe = (rotulo) => { if (!causas.includes(rotulo)) causas.push(rotulo); };
+  const indiretas = [...junto.matchAll(new RegExp(EXECUCAO_INDIRETA.source, "gi"))];
+  if (indiretas.some((m) => m[0].startsWith("$("))) poe("`$(`");
+  if (indiretas.some((m) => /^[<>]\(/.test(m[0]))) poe("`<(`/`>(`");
+  if (junto.includes("`")) poe("crase");
+  for (const m of indiretas) if (m[4]) poe(`\`${m[4]} ${m[7]}\``);
+  const fonte = FONTE_DE_SCRIPT.exec(semAspas);
+  if (fonte) poe(`\`${fonte[2]}\``);
+  for (const m of indiretas) if (m[2]) poe(`\`${m[2]}\``);
+  const definicoes = [...semAspas.matchAll(new RegExp(DEFINE_VARIAVEL.source, "gi"))];
+  if (definicoes.some((m) => m[2] && m[2].toLowerCase() === "eval")) poe("`eval`");
+  for (const m of definicoes) {
+    if (m[2] && m[2].toLowerCase() === "eval") continue;
+    poe(m[2] ? `\`${m[2]}\` (define variavel)` : /printf/i.test(m[0]) ? "`printf -v` (define variavel)" : "definicao de variavel");
+  }
+  return causas.length ? causas : ["comando que o gate nao mede"];
+}
+
 // Escrita na variavel: `=`, atribuicao composta (`+=`, `??=`), lista (`$env:X, $y =`) e `foreach ($env:X in`.
 const ESCRITA_DEPOIS = String.raw`(?!\s*(?:[-+*/%]|\?\?)?=(?!=)|\s*,|\s+in\b)`;
 function casaRedefinida(comando, ehPowerShell) {
@@ -1784,16 +1827,79 @@ function casaRedefinida(comando, ehPowerShell) {
   return false;
 }
 
-// #573 (D4, recuo da D3): destino de redirecionamento que COMECA com variavel (`$NOME`, `${NOME}`),
-// quando a rede o barra, recebe mensagem propria. Julgar o valor da variavel pedia reimplementar a gramatica do shell
+// #573 (D4, recuo da D3) e #580 (D1): palavra que COMECA com expansao (`$NOME`, `${...}`, `$(`,
+// crase) barra na rede, sem julgar o valor. Julgar o valor pedia reimplementar a gramatica do shell
 // (atribuicao em ramo que nao roda, laco, glob, nome indireto, comentario, heredoc) e cada rodada
 // de revisao achou o proximo contorno; o usuario decidiu recuar (2026-10-22). Os atalhos da casa
-// (`$HOME/...`) seguem o caminho proprio de `CASA_NO_INICIO`.
-function variavelNoInicio(destino) {
-  const m = /^\$(?:([A-Za-z_]\w*)|\{([A-Za-z_]\w*)\})/.exec(destino.replace(/^["']+/, ""));
+// (`$HOME/...`) seguem o caminho proprio de `CASA_NO_INICIO` e devolvem null aqui. Expansao depois
+// de um prefixo literal (`out-$(date).json`) nao conta. Devolve o texto da expansao, ou null.
+function expansaoNoInicio(palavra) {
+  const p = String(palavra).replace(/^["']+/, "");
+  if (p.startsWith("`")) return "`";
+  if (p.startsWith("$(")) return "$(";
+  const m = /^\$(?:([A-Za-z_]\w*)|\{([^}]*)(?:\}|$)|[0-9@*#?!$])/.exec(p);
   if (!m) return null;
-  const nome = m[1] || m[2];
-  return new RegExp(`^(?:${NOMES_DA_CASA})$`).test(nome) ? null : nome;
+  const nome = m[1] !== undefined ? m[1] : m[2];
+  return nome !== undefined && new RegExp(`^(?:${NOMES_DA_CASA})$`).test(nome) ? null : m[0];
+}
+
+// #580 (D1): escritores de Bash cujo alvo a rede confere pela expansao no inicio. Escritor fora da
+// lista (`python -c`, `node -e`, `npm`) nao e julgado pelo argumento (#582).
+const ESCRITORES_DA_REDE = new Set(["touch", "cp", "mv", "tee", "mkdir", "rm", "ln", "install", "sed", "dd"]);
+// Opcoes curtas com valor separado que nao e alvo (`touch -d "$(date)" f`, `install -m 755 a b`).
+const OPCOES_COM_VALOR_DO_ESCRITOR = {
+  touch: ["-d", "-r", "-t"], mkdir: ["-m"], install: ["-m", "-o", "-g", "-S"],
+  cp: ["-S"], mv: ["-S"], ln: ["-S"], sed: ["-e", "-f", "-l"],
+};
+// Escritores com o destino em `-t`/`--target-directory`.
+const ESCRITORES_COM_DESTINO = new Set(["cp", "mv", "ln", "install"]);
+
+/**
+ * Alvos de escrita de um escritor conhecido (#580, D1), na ordem dos tokens. `cp`, `mv`, `ln` e
+ * `install`: o ultimo posicional e o valor de `-t`/`--target-directory` (tambem colado, `-t"$X"`,
+ * e combinado, `-vt`); `mv` remove a origem, entao todos os posicionais. `sed`: os arquivos, so
+ * com `-i`. `dd`: o valor de `of=`. Os demais: todos os posicionais. Comando que nao esta na lista
+ * devolve vazio. O agrupamento (`(touch x)`, `{ touch x; }`) nao e comando nem alvo.
+ * @returns {Array<{comando: string, alvo: string}>}
+ */
+function alvosDeEscritor(toks) {
+  toks = toks.filter((t) => t.q || !/^[(){}]$/.test(t.v));
+  const pos = posicaoDeComando(toks);
+  if (pos === null || pos === undefined) return [];
+  const palavra = toks[pos].q ? toks[pos].v : toks[pos].v.replace(/^\(+/, "");
+  const nome = palavra.split(/[\\/]/).pop().replace(/\.exe$/i, "");
+  if (!ESCRITORES_DA_REDE.has(nome)) return [];
+  const args = toks.slice(pos + 1).map((t) => t.v);
+  const com = (alvo) => ({ comando: nome, alvo });
+  if (nome === "dd") return args.filter((a) => a.startsWith("of=")).map((a) => com(a.slice(3)));
+  if (nome === "sed" && !args.some((a) => /^-[a-zA-Z]*i|^--in-place/.test(a))) return [];
+  const comValor = OPCOES_COM_VALOR_DO_ESCRITOR[nome] || [];
+  const posicionais = [];
+  const destinos = [];
+  let scriptPorOpcao = false;
+  let fimDasOpcoes = false;
+  for (let k = 0; k < args.length; k += 1) {
+    const a = args[k];
+    if (fimDasOpcoes || !a.startsWith("-") || a === "-") { posicionais.push(a); continue; }
+    if (a === "--") { fimDasOpcoes = true; continue; }
+    const colado = /^--target-directory=(.*)$/s.exec(a);
+    if (colado && ESCRITORES_COM_DESTINO.has(nome)) { destinos.push(colado[1]); continue; }
+    const tColado = /^-[a-zA-Z]*t(.+)$/s.exec(a);
+    if (tColado && !a.startsWith("--") && ESCRITORES_COM_DESTINO.has(nome)) { destinos.push(tColado[1]); continue; }
+    if (/^(-[a-zA-Z]*t|--target-directory)$/.test(a) && ESCRITORES_COM_DESTINO.has(nome)) {
+      if (k + 1 < args.length) destinos.push(args[k + 1]);
+      k += 1;
+      continue;
+    }
+    if (/^(-e|-f|--expression=|--file=)/.test(a) && nome === "sed") scriptPorOpcao = true;
+    if (comValor.includes(a)) k += 1;
+  }
+  let alvos;
+  if (nome === "mv") alvos = destinos.concat(posicionais);
+  else if (ESCRITORES_COM_DESTINO.has(nome)) alvos = destinos.concat(posicionais.slice(-1));
+  else if (nome === "sed") alvos = scriptPorOpcao ? posicionais : posicionais.slice(1);
+  else alvos = posicionais;
+  return alvos.map(com);
 }
 
 /**
@@ -1891,6 +1997,52 @@ function alvosDaRede(comando, cwd, ehPowerShell, soVeredito = false) {
   const citaProtegido = (texto, base) => primeiroProtegido(caminhosCitados(texto, ehPowerShell), base, texto);
   // O alvo leva o motivo (#573 D4): `bloqueiaPelaRede` diz o que barrou.
   const alvo = (rede) => [{ dir: repo.principal, incerto: true, rede }];
+  // #580 (D1): destino de redirecionamento que comeca com expansao barra em todo ramo da rede,
+  // sem julgar o valor. So o Bash; o texto chega sem corpo de heredoc, que e dado.
+  const destinoComExpansao = (texto) => {
+    if (ehPowerShell) return null;
+    for (const destino of destinosDeRedirecionamento(texto, false)) {
+      if (ehDescarteDeSaida(destino, false)) continue;
+      if (expansaoNoInicio(destino)) return destino;
+    }
+    return null;
+  };
+  // #580 (D1): alvo de escritor conhecido que comeca com expansao, no segmento, dentro de
+  // substituicao (`$(...)`, crase) e dentro de `bash -c`/`sh -c`.
+  const escritorComExpansao = (texto, profundidade = 0) => {
+    if (ehPowerShell || profundidade > 4) return null;
+    for (const seg of segmentosDaRede(texto, false)) {
+      const toks = tokensComAspas(seg);
+      const achado = alvosDeEscritor(toks).find((a) => expansaoNoInicio(a.alvo));
+      if (achado) return achado;
+      const pos = posicaoDeComando(toks);
+      if (pos === null || pos === undefined) continue;
+      const { interno, ilegivel } = desempacotarWrapperDeString(textoAPartir(toks, pos), { ferramenta: "Bash" });
+      const dentro = interno !== null && !ilegivel ? escritorComExpansao(interno, profundidade + 1) : null;
+      if (dentro) return dentro;
+    }
+    for (const corpo of corposDeSubstituicao(texto)) {
+      const dentro = escritorComExpansao(corpo, profundidade + 1);
+      if (dentro) return dentro;
+    }
+    return null;
+  };
+  const comExpansao = (texto) => {
+    const destino = destinoComExpansao(texto);
+    if (destino) {
+      return `Destino de redirecionamento comeca com variavel: ${destino}\n` +
+        `O gate nao julga o valor de variavel no destino. Saida: escreva o caminho literal\nno comando, ou grave o arquivo com a ferramenta Write.`;
+    }
+    const escrita = escritorComExpansao(texto);
+    if (escrita) {
+      return `Alvo de ${escrita.comando} comeca com variavel ou substituicao: ${escrita.alvo}\n` +
+        `O gate nao julga o valor de variavel no caminho. Saida: escreva o caminho literal\nno comando, ou grave o arquivo com a ferramenta Write.`;
+    }
+    return null;
+  };
+  // Mesmo comprimento do comando: o corpo de heredoc que e dado vira espaco, e o segmento se acha
+  // pela mesma posicao.
+  const semHeredoc = ehPowerShell ? comando : mascaraHeredocsBash(comando);
   if (casaRedefinida(comando, ehPowerShell)) {
     // #573 (recuo da D2): o `cd -` segue barrado como antes, mas o agente le a causa e a saida.
     // So culpa o `cd -` quando ele e a causa: a linha reescrita como a saida manda (cada `cd -`
@@ -1902,9 +2054,11 @@ function alvosDaRede(comando, cwd, ehPowerShell, soVeredito = false) {
     const HIFEN = /(^|[\s;&|(`{"'])((?:cd|pushd)[ \t]+)["']?-["']?(?=$|[\s;&|)}#<>"'])/g;
     const medivel = comando.length <= 2000 && (comando.match(HIFEN) || []).length <= 8;
     const comCaminho = medivel ? comando.replace(HIFEN, (_, a, b) => `${a}${b}${cwd}`) : comando;
-    if (!soVeredito && !ehPowerShell && medivel && /(^|[\s;&|(`{])(?:cd|pushd)[ \t]+-(?=$|[\s;&|)}#<>])/.test(comando.replace(/["'\\]/g, "")) &&
+    if (!soVeredito && !ehPowerShell && medivel && CD_MENOS.test(comando.replace(/["'\\]/g, "")) &&
         !alvosDaRede(comCaminho, cwd, false, true).length) {
-      return alvo("A linha usa `cd -` (volta ao diretorio anterior) junto de execucao indireta (`$(`, `bash -c`,\n`source`): o gate nao sabe para onde o `cd -` leva. Saida: troque o `cd -` pelo caminho\nabsoluto do diretorio (`cd /caminho/do/worktree`).");
+      // #573 (D5): a mensagem nomeia so o que esta na linha.
+      return alvo("A linha usa `cd -` (volta ao diretorio anterior) junto de " + causasDoCdMenos(comando).join(", ") +
+        ":\no gate nao sabe para onde o `cd -` leva. Saida: troque o `cd -` pelo caminho\nabsoluto do diretorio (`cd /caminho/do/worktree`).");
     }
     return alvo("A linha redefine a casa (HOME/USERPROFILE), ou usa a casa (`~`, `$HOME`, `cd` sem destino)\njunto de execucao indireta (`$(`, `bash -c`, `source`): o gate nao sabe para onde o shell vai.");
   }
@@ -1914,6 +2068,10 @@ function alvosDaRede(comando, cwd, ehPowerShell, soVeredito = false) {
   const naoConfiavel = /\$\(|`|\$'|\\\r?\n/.test(comando) && !ehPowerShell
     || ehPowerShell && (desalinhaAMascara(comando) || /[\u2018-\u201e]/.test(comando) || /"[^"]*\$\(/.test(comando) || /@['"]/.test(comando));
   if (naoConfiavel) {
+    // Continuacao (`\` + quebra): colada, o alvo da linha de baixo e argumento do comando; sem
+    // colar, vira segmento sem comando. As duas leituras, porque contrabarras pares nao continuam.
+    const expansao = comExpansao(semHeredoc.replace(/\\\r?\n/g, " ")) || comExpansao(semHeredoc);
+    if (expansao) return alvo(expansao);
     const citado = citaProtegido(comando, cwd);
     return citado ? alvo(`A linha cita caminho que cai no checkout principal: ${citado}`) : [];
   }
@@ -1926,11 +2084,18 @@ function alvosDaRede(comando, cwd, ehPowerShell, soVeredito = false) {
   // leitura alimenta quem escreve, entao os caminhos dele tambem contam.
   const pipelineComEscritor = temForaDeAspas(comando, "|") && leitura.some((l) => !l);
   const estado = { atual: cwd, incerto: false, pilhaPushd: [] };
+  let fimDoSegmento = 0;
   for (let i = 0; i < segmentos.length; i += 1) {
     const seg = segmentos[i];
     const mov = resolverMovedor(seg, estado, ehPowerShell);
     const base = mov.cwd;
     const toks = tokensComAspas(seg);
+    // O segmento e um trecho contiguo do comando; o mesmo trecho em `semHeredoc` tira o corpo de heredoc.
+    const ini = comando.indexOf(seg, fimDoSegmento);
+    if (ini >= 0) fimDoSegmento = ini + seg.length;
+    // #580 (D1): vale para o segmento de leitura, o de pipeline com escritor e o de fora de leitura.
+    const expansao = comExpansao(ini >= 0 ? semHeredoc.slice(ini, ini + seg.length) : seg);
+    if (expansao) return alvo(expansao);
     if (leitura[i] && !pipelineComEscritor) {
       // Leitura: conta o destino de redirecionamento e o que esta entre parenteses ou
       // chaves (`Get-Content (Remove-Item <P>/f)` roda o de dentro).
@@ -1938,7 +2103,7 @@ function alvosDaRede(comando, cwd, ehPowerShell, soVeredito = false) {
         if (ehDescarteDeSaida(destino, ehPowerShell)) continue;
         const caido = primeiroProtegido(caminhosCitados(destino, ehPowerShell).concat([destino.replace(/^FileSystem::/i, "")]), base, destino);
         // Mesmo veredito de antes; so a mensagem muda quando a causa e a variavel no inicio (D4).
-        if (caido && !ehPowerShell && variavelNoInicio(destino)) {
+        if (caido && !ehPowerShell && expansaoNoInicio(destino)) {
           return alvo(`Destino de redirecionamento comeca com variavel: ${destino}\n` +
             `O gate nao julga o valor de variavel no destino. Saida: escreva o caminho literal\nno comando, ou grave o arquivo com a ferramenta Write.`);
         }
@@ -2032,7 +2197,8 @@ function main() {
       // comentario em `alvosBash`.
       alvos = alvosBash(entrada.command, cwd, undefined, nome).map((a) => ({ dir: a.dir, incerto: !!a.incerto }));
       alvos = alvos.concat(alvosEscrita);
-      motivo = `Comando que mexe no estado do repo: git ${verbo}`;
+      // #573 (D5): linha com `cd -` recebe a saida dele tambem na camada de git.
+      motivo = `Comando que mexe no estado do repo: git ${verbo}` + dicaDoCdMenos(entrada.command);
     } else {
       // Inspecionar redirecionamentos e ferramentas de escrita
       if (alvosEscrita.length > 0) {
@@ -2068,7 +2234,9 @@ function main() {
                       ? `Comando dinamico (eval/bash -c) com conteudo nao resolvivel — pode rodar CLI que escreve`
                       : `CLI que escreve (${achado.nome}) com cd nao resolvido — destino desconhecido`,
                     estadoAqui.toplevel,
-                    `${ev.agent_type || "?"} (${ev.agent_id})`
+                    `${ev.agent_type || "?"} (${ev.agent_id})`,
+                    // #583 (D4): com o cwd num worktree, a mensagem diz o worktree, nao "diretorio principal".
+                    null, estadoAqui.ehWorktree
                   );
                 }
               }
