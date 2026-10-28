@@ -1,0 +1,169 @@
+{
+  "slug": "2026-10-28-lote-b",
+  "titulo": "Lote B: paralelo por tarefa, esperar-ci, issue de outro repo, teto proporcional e catraca",
+  "criado_em": "2026-10-28",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-28-lote-b.md",
+    "em": "2026-10-28"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-28-lote-b.md",
+    "tarefas": 7,
+    "paralelas": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "em": "2026-10-28"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-28",
+    "integradas": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      8
+    ],
+    "em": "2026-10-28",
+    "comando": "bash hooks/testa-abertura-mod-config.sh (tarefa 11); integrar-tarefa.cjs nas tarefas 1-6 e 8",
+    "saida": "testa-abertura-mod-config: ok: 20   falhou: 0; tarefas 1-6 e 8 aceitas e integradas; 7, 9, 10 e 11 de docs",
+    "tarefas_ok": 11,
+    "tarefas": 11,
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-estagio-ativo.cjs: branch fluxo/<slug>-t2 resolve para o fluxo <slug>"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-publicar-branch.sh: (g36) para na 3a sondagem: pr checks --json chamado 4 vezes"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-fechar-issue.sh: 614-1 URL de caixa/outro#12, marcador so em caixa/alvo#12: exit 2"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-teto-declarado.cjs: plano de 43 tarefas sem cabecalho: teto 65"
+      },
+      {
+        "tarefa": 5,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-fluxo.sh: duas tarefas na mesma bateria: baseline roda uma vez (5 rodadas, nao 6)"
+      },
+      {
+        "tarefa": 6,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao.sh: #609: raiz app importando ../lib/x.js sai 0 sem --no-lugar"
+      },
+      {
+        "tarefa": 7,
+        "resultado": "n/a",
+        "motivo": "bump de versao e texto"
+      },
+      {
+        "tarefa": 8,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao.sh: baseline repassado com placar: pos-mutacao sem placar e colapso (exit 6)"
+      },
+      {
+        "tarefa": 9,
+        "resultado": "n/a",
+        "motivo": "comentario e texto"
+      },
+      {
+        "tarefa": 10,
+        "resultado": "n/a",
+        "motivo": "texto movido para references"
+      },
+      {
+        "tarefa": 11,
+        "resultado": "n/a",
+        "motivo": "texto movido entre references"
+      }
+    ],
+    "reaberturas": 2
+  },
+  "revisar": {
+    "status": "pendente",
+    "snapshot": {
+      "head": "6f7ad1bdee5918dfc637fa613c1e81a9cd8b2d8c",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "ac3c7165878ee1338",
+        "veredito": "ok",
+        "em": "2026-10-28",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/8a96ac43-ade9-4b4e-a6e0-475b7105c7df/subagents/agent-ac3c7165878ee1338.jsonl"
+      }
+    ],
+    "achados": 0,
+    "em": "2026-10-28",
+    "voltas": [
+      {
+        "volta": 1,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a82142008c6ff96e0",
+            "veredito": "ok",
+            "em": "2026-10-28",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/8a96ac43-ade9-4b4e-a6e0-475b7105c7df/subagents/agent-a82142008c6ff96e0.jsonl"
+          },
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "ae1aefc8a1f1dd62e",
+            "veredito": "reprovado",
+            "em": "2026-10-28",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/8a96ac43-ade9-4b4e-a6e0-475b7105c7df/subagents/agent-ae1aefc8a1f1dd62e.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 2,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a48dde6419f3057b7",
+            "veredito": "reprovado",
+            "em": "2026-10-28",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/8a96ac43-ade9-4b4e-a6e0-475b7105c7df/subagents/agent-a48dde6419f3057b7.jsonl"
+          }
+        ]
+      }
+    ],
+    "base": "e37ba660bce08781c9ac73bb67e1a3cc89e5fa9e",
+    "head": "6f7ad1bdee5918dfc637fa613c1e81a9cd8b2d8c"
+  },
+  "verificar": {
+    "status": "pendente",
+    "em": "2026-10-28"
+  },
+  "fechar": {
+    "status": "pendente",
+    "em": "2026-10-28"
+  },
+  "reaberturas": [
+    {
+      "em": "2026-10-28",
+      "de": "revisar",
+      "motivo": "CI do PR #618: hooks/testa-abertura-mod-config.sh fixa os bytes das elaboracoes injetadas (33697); a frase da tarefa 7 em regra-11.md somou 122 B a toda sessao. Frase movida para regra-11-atividade.md (tarefa 11)."
+    }
+  ]
+}

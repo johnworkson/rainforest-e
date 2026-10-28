@@ -32,12 +32,13 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { caminhoExecutavel } = require(path.join(__dirname, '..', 'hooks', 'lib', 'resolver-executavel.cjs'));
 const { contarOcorrencias } = require(path.join(__dirname, '..', 'hooks', 'lib', 'contar-ocorrencias.cjs'));
 const { caminhoDoc } = require(path.join(__dirname, '..', 'hooks', 'lib', 'pastas-docs.cjs'));
-const { lerTetoDeclarado } = require(path.join(__dirname, '..', 'hooks', 'lib', 'teto-despachos.cjs'));
+const { lerTetoDeclarado, tetoPadrao } = require(path.join(__dirname, '..', 'hooks', 'lib', 'teto-despachos.cjs'));
 const { calcularCamadas, ErroCamadas, parseDependencias, globMatches, acoplamentos } = require(path.join(__dirname, 'lib', 'camadas.cjs'));
 
 // A raiz é a do PROJETO em que se trabalha, mesma cadeia do estado.cjs
@@ -275,8 +276,12 @@ function cmdCobertura() {
   const tarefasDag = []; // entrada do calcularCamadas: numero, dependeDe, arquivos
 
   // D14: o mesmo leitor do hook gate-teto-despachos; cabeçalho ilegível recusa aqui, não só no despacho.
-  const tetoDeclarado = lerTetoDeclarado(conteudo_plano);
+  // D5 do lote B: sem a linha, o padrão é o do hook, max(40, 1,5 x tarefas). Aviso (não erro) quando o declarado é menor que as tarefas.
+  const tetoDeclarado = lerTetoDeclarado(conteudo_plano, tetoPadrao(tarefas.length));
   if (tetoDeclarado.erro) erros.push(`plano ${arquivo_plano}: ${tetoDeclarado.erro}`);
+  else if (tetoDeclarado.teto < tarefas.length) {
+    console.log(`aviso: teto-despachos: ${tetoDeclarado.teto} declarado e menor que as ${tarefas.length} tarefas do plano`);
+  }
 
   for (const tarefa of tarefas) {
     const { numero, nome, atende, tipo, paralela, dependeDe, arquivos, mutacao } = tarefa;
@@ -1035,6 +1040,10 @@ function extrairArquivos(conteudo_plano, numero_tarefa) {
  * (`integrar-tarefa.cjs`) passa a flag; o `verificar` (`estado.cjs`) não passa, e por
  * isso não grava flake.
  *
+ * Baseline uma vez por bateria (D6, #606): tarefas com a mesma `(bateria, raiz, timeout)`
+ * medem o baseline só na primeira; as seguintes repassam o verde gravado (`--baseline-de`).
+ * `no-lugar: sim` não entra: o fonte real é reconferido entre tarefas, então mede sempre.
+ *
  * Exit: 0 se nenhum mutante sobreviveu (ou tudo foi pulado); ≠ 0 se algum sobreviveu.
  */
 function cmdMutacoes() {
@@ -1073,6 +1082,11 @@ function cmdMutacoes() {
   // exit 0 sem ter aplicado mutação nenhuma.
   let algumaFalhaDeMedicao = false;
   const CONFERIR_MUTACAO = path.join(__dirname, 'conferir-mutacao.cjs');
+  // D6 (#606): `baselines` guarda, por chave `(bateria, raiz, timeout)`, o arquivo do baseline
+  // verde já medido nesta execução. Os arquivos moram numa pasta temporária própria, que sai
+  // no fim do subcomando.
+  const baselines = new Map();
+  const dirBaselines = fs.mkdtempSync(path.join(os.tmpdir(), 'mutacoes-baseline-'));
 
   for (const tarefa of tarefas) {
     const { numero, nome, mutacao } = tarefa;
@@ -1137,6 +1151,18 @@ function cmdMutacoes() {
     // `no-lugar: sim` (#527, #569): runtime vivo sobre a árvore real (editor Unity aberto).
     const noLugar = Boolean(campos['no-lugar']) && campos['no-lugar'].replace(/^`|`$/g, '').trim() === 'sim';
     if (noLugar) argumentos.push('--no-lugar');
+    // D6 (#606): a primeira tarefa de cada chave mede e grava o baseline verde; as seguintes
+    // repassam o arquivo. `no-lugar` não recebe nenhuma das duas flags: mede sempre.
+    let baselineDaTarefa = null;
+    if (!noLugar) {
+      const chaveBaseline = JSON.stringify([bateria, raizTarefa, timeout]);
+      const flagBaseline = baselines.has(chaveBaseline) ? '--baseline-de' : '--baseline-para';
+      const arquivoBaseline = flagBaseline === '--baseline-de'
+        ? baselines.get(chaveBaseline)
+        : path.join(dirBaselines, `tarefa-${numero}.json`);
+      argumentos.push(flagBaseline, arquivoBaseline);
+      baselineDaTarefa = { chave: chaveBaseline, arquivo: arquivoBaseline };
+    }
     if (gravaFlake) argumentos.push('--slug', slug, '--tarefa', String(numero));
     // #498: o estado fica na RAIZ do fluxo, não na `--raiz` da tarefa (que pode ser `raiz: app`).
     if (gravaFlake) argumentos.push('--raiz-estado', RAIZ);
@@ -1144,6 +1170,12 @@ function cmdMutacoes() {
       stdio: 'pipe',
       encoding: 'utf8',
     });
+    // D6 (#606): exit 0 ou 2 só sai depois de baseline verde, e o arquivo tem de existir para
+    // ser repassado. Qualquer outra saída não entra: a próxima tarefa mede de novo.
+    if (baselineDaTarefa && (resultado.status === 0 || resultado.status === 2)
+        && fs.existsSync(baselineDaTarefa.arquivo)) {
+      baselines.set(baselineDaTarefa.chave, baselineDaTarefa.arquivo);
+    }
 
     // A razao do conferir-mutacao vem no stderr, e `stdio: pipe` a engolia: tres
     // causas diferentes (baseline nao-verde, `--de` ambiguo, baseline estourou o
@@ -1234,6 +1266,7 @@ function cmdMutacoes() {
   // #281 registrou: nove tarefas, sete com mutação declarada, nenhuma
   // aplicada, e o exit saía 0 porque só `algumSobreviveu` (mutante realmente
   // sobrevivendo) derrubava o subcomando.
+  fs.rmSync(dirBaselines, { recursive: true, force: true });
   process.exit((algumSobreviveu || algumaFalhaDeMedicao) ? 1 : 0);
 }
 

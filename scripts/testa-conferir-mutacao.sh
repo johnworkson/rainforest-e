@@ -1397,6 +1397,160 @@ else
   falhou=$((falhou+1)); printf '  FALHA a linha vermelha nao apareceu exatamente uma vez\n'
 fi
 
+echo
+echo "== 29. D6 (#606): --baseline-para grava o verde, --baseline-de repassa sem rodar =="
+# A bateria conta cada execucao num arquivo FORA da copia (CONTAGEM): assim se ve quantas
+# vezes ela rodou, e nao so o exit. Por tras, a bateria honesta decide o veredito.
+cat > "$CAIXA/bateria-conta.sh" <<'BAT'
+#!/bin/bash
+echo x >> "$CONTAGEM"
+exec bash bateria.sh
+BAT
+export CONTAGEM="$S/contagem"
+conta_exec(){ if [ -f "$CONTAGEM" ]; then wc -l < "$CONTAGEM" | tr -d ' '; else echo 0; fi; }
+
+printf '%s' '{"status":1,"duracao":5,"stdout":"","stderr":""}' > "$S/base-vermelho.json"
+printf '%s' 'isto nao e json' > "$S/base-ilegivel.json"
+printf '%s' '{"status":0,"duracao":100,"stdout":"","stderr":""}' > "$S/base-verde.json"
+
+# 29a: status 1 no arquivo — recusa com exit 4 antes de qualquer execucao da bateria.
+rm -f "$CONTAGEM"
+exige 4 "--baseline-de com status 1 recusa com exit=4" \
+  CHK --arquivo fonte.cjs --de 'process.exit(2);' --para 'process.exit(0);' --bateria 'bash bateria-conta.sh' --baseline-de "$W/base-vermelho.json"
+tem "status 1 sai RECUSADO: baseline repassado ilegivel" "RECUSADO: baseline repassado ilegivel"
+exige 0 "status 1 nao roda a bateria nenhuma vez" test "$(conta_exec)" -eq 0
+
+# 29b: arquivo ilegivel e arquivo ausente recusam do mesmo jeito.
+rm -f "$CONTAGEM"
+exige 4 "--baseline-de com arquivo ilegivel recusa com exit=4" \
+  CHK --arquivo fonte.cjs --de 'process.exit(2);' --para 'process.exit(0);' --bateria 'bash bateria-conta.sh' --baseline-de "$W/base-ilegivel.json"
+tem "ilegivel sai RECUSADO: baseline repassado ilegivel" "RECUSADO: baseline repassado ilegivel"
+exige 4 "--baseline-de com arquivo ausente recusa com exit=4" \
+  CHK --arquivo fonte.cjs --de 'process.exit(2);' --para 'process.exit(0);' --bateria 'bash bateria-conta.sh' --baseline-de "$W/nao-existe.json"
+
+# 29c: --baseline-para grava o verde; --baseline-de do arquivo gravado NAO roda a baseline de novo.
+# Base + pos-mutacao + confirmacao = 3 execucoes; repassado = pos + confirmacao = 2.
+rm -f "$CONTAGEM"
+exige 0 "--baseline-para: mutacao vermelha e baseline gravado (3 execucoes)" \
+  CHK --arquivo fonte.cjs --de 'process.exit(2);' --para 'process.exit(0);' --bateria 'bash bateria-conta.sh' --baseline-para "$W/base-gravado.json"
+exige 0 "--baseline-para grava JSON com \"status\":0" grep -q '"status":0' "$S/base-gravado.json"
+exige 0 "--baseline-para: exatamente 3 execucoes da bateria" test "$(conta_exec)" -eq 3
+
+rm -f "$CONTAGEM"
+exige 0 "--baseline-de do arquivo gravado: mutacao vermelha, so 2 execucoes (sem baseline)" \
+  CHK --arquivo fonte.cjs --de 'process.exit(2);' --para 'process.exit(0);' --bateria 'bash bateria-conta.sh' --baseline-de "$W/base-gravado.json"
+tem "a saida diz que o baseline foi repassado" "--- bateria baseline (repassado de"
+exige 0 "--baseline-de: exatamente 2 execucoes da bateria" test "$(conta_exec)" -eq 2
+
+# 29d: uso errado sai 1 antes de qualquer efeito (nada copiado, nada mutado).
+exige 1 "--baseline-para e --baseline-de juntos: erro de uso, exit=1" \
+  CHK --arquivo fonte.cjs --de 'process.exit(2);' --para 'process.exit(0);' --bateria 'bash bateria-conta.sh' --baseline-para "$W/x.json" --baseline-de "$W/base-verde.json"
+tem "diz que sao mutuamente exclusivas" "mutuamente exclusivas"
+exige 1 "--baseline-de com --no-lugar: erro de uso, exit=1" \
+  CHK --arquivo fonte.cjs --de 'process.exit(2);' --para 'process.exit(0);' --bateria 'bash bateria-conta.sh' --no-lugar --baseline-de "$W/base-verde.json"
+
+echo
+echo "== 29e. baseline repassado carrega o placar: pos-mutacao sem placar e colapso (exit 6) =="
+# O stdout do baseline gravado por --baseline-para e' o unico lugar onde o placar verde
+# (ok: 5) sobrevive ate a pos-mutacao repassada por --baseline-de. Se esse stdout chegasse
+# vazio ao baseline repassado, o colapso (ok: 0 falhou: 0) nao teria placar para comparar e
+# o caso sairia diferente de 6. Achado 2 da revisao 1 do lote B, tarefa 8.
+cat > "$CAIXA/bateria-colapsa.sh" <<'BAT'
+#!/bin/bash
+# Com a marca COLAPSO-MUTADO no fonte, a bateria colapsou: nenhuma asserção foi tentada.
+if grep -q 'COLAPSO-MUTADO' fonte-colapso.cjs; then
+  echo "ok: 0   falhou: 0"
+  exit 1
+fi
+echo "ok: 5   falhou: 0"
+exit 0
+BAT
+printf 'const comportamento = true;\n' > "$CAIXA/fonte-colapso.cjs"
+cp "$CAIXA/fonte-colapso.cjs" "$S/fonte-colapso.pristino"
+
+# Primeira chamada: grava o baseline verde antes de mutar. A pos-mutacao desta mesma
+# chamada tambem colapsa, entao o exit e' 6; o que importa aqui e' o arquivo gravado.
+rm -f "$S/base-placar.json"
+exige 6 "--baseline-para grava o baseline verde antes do colapso da pos-mutacao (exit 6)" \
+  CHK --arquivo fonte-colapso.cjs --de "const comportamento = true;" --para "const comportamento = true; // COLAPSO-MUTADO" --bateria 'bash bateria-colapsa.sh' --baseline-para "$W/base-placar.json"
+exige 0 "o baseline gravado guarda o placar: stdout com 'ok: 5'" grep -q 'ok: 5' "$S/base-placar.json"
+
+# Segunda chamada: repassa o baseline gravado. So a pos-mutacao roda a bateria, e colapsa.
+exige 6 "baseline repassado com placar: pos-mutacao sem placar e colapso (exit 6)" \
+  CHK --arquivo fonte-colapso.cjs --de "const comportamento = true;" --para "const comportamento = true; // COLAPSO-MUTADO" --bateria 'bash bateria-colapsa.sh' --baseline-de "$W/base-placar.json"
+tem "informa o colapso" "a bateria colapsou"
+tem "o placar do baseline repassado chega ao colapso (ok=5)" "ok=5"
+nao_tem "nao diz placar ausente: o baseline trouxe o placar" "placar ausente"
+if ! cmp -s "$CAIXA/fonte-colapso.cjs" "$S/fonte-colapso.pristino"; then
+  falhou=$((falhou+1)); printf '  FALHA fonte-colapso.cjs nao foi restaurado\n'
+else
+  ok=$((ok+1)); printf '  ok    fonte-colapso.cjs restaurado\n'
+fi
+
+echo
+echo "== 30. raiz em subpasta de repositorio git: a copia e o topo inteiro (plano lote-b, tarefa 6, D7, Issue #609) =="
+# Monorepo: o app em app/ importa um irmao (../lib/x.js). Com a copia so da
+# subpasta, o irmao nao existe na copia; com a copia do topo, existe. Fixture
+# proprio: repositorio git com lib/x.js e app/teste.js. A bateria falha quando
+# x.js esta mutado (module.exports = 2).
+CAIXA_609="$S/caixa-609"; WCAIXA_609="$W/caixa-609"
+mkdir -p "$CAIXA_609/app" "$CAIXA_609/lib"
+printf 'module.exports = 1;\n' > "$CAIXA_609/lib/x.js"
+cat > "$CAIXA_609/app/teste.js" <<'BAT'
+if (require('../lib/x.js') !== 1) { console.log('ok: 0   falhou: 1'); process.exit(1); }
+console.log('ok: 1   falhou: 0');
+BAT
+(
+  cd "$CAIXA_609" || exit 1
+  git init -q
+  git config user.email "test@test"
+  git config user.name "Test"
+  git config core.autocrlf false
+  git add lib/x.js app/teste.js
+  git commit -q -m "commit inicial do fixture #609"
+)
+
+OUT_609="$(node "$SCRIPT" --raiz "$WCAIXA_609/app" --arquivo ../lib/x.js --de 'module.exports = 1;' --para 'module.exports = 2;' --bateria 'node teste.js' 2>&1)"
+GOT_609=$?
+if [ "$GOT_609" -eq 0 ] && printf '%s' "$OUT_609" | grep -q 'VERMELHA'; then
+  ok=$((ok+1)); printf '  ok    #609: raiz app importando ../lib/x.js sai 0 sem --no-lugar (exit=%s, bateria VERMELHA)\n' "$GOT_609"
+else
+  falhou=$((falhou+1)); printf '  FALHA #609: raiz app importando ../lib/x.js sai 0 sem --no-lugar: veio exit=%s\n' "$GOT_609"
+  printf '%s\n' "$OUT_609" | tail -12 | sed 's/^/        | /'
+fi
+STATUS_609="$(cd "$CAIXA_609" && git status --porcelain)"
+if [ -z "$STATUS_609" ]; then
+  ok=$((ok+1)); printf '  ok    #609: repositorio original sem alteracoes apos a catraca (copia do topo, nao o original)\n'
+else
+  falhou=$((falhou+1)); printf '  FALHA #609: repositorio original ficou sujo apos a catraca:\n%s\n' "$STATUS_609"
+fi
+
+# Vizinho 1: raiz fora de git. A copia continua so a raiz, como hoje: o irmao
+# ../lib/x.js nao vai junto, e --arquivo nao existe na copia -> exit 1, antes da bateria.
+CAIXA_FORA="$S/caixa-fora"; WCAIXA_FORA="$W/caixa-fora"
+mkdir -p "$CAIXA_FORA/app" "$CAIXA_FORA/lib"
+printf 'module.exports = 1;\n' > "$CAIXA_FORA/lib/x.js"
+cp "$CAIXA_609/app/teste.js" "$CAIXA_FORA/app/teste.js"
+OUT_FORA="$(node "$SCRIPT" --raiz "$WCAIXA_FORA/app" --arquivo ../lib/x.js --de 'module.exports = 1;' --para 'module.exports = 2;' --bateria 'node teste.js' 2>&1)"
+GOT_FORA=$?
+if [ "$GOT_FORA" -eq 1 ] && printf '%s' "$OUT_FORA" | grep -q 'erro: --arquivo n.*existe'; then
+  ok=$((ok+1)); printf '  ok    vizinho: raiz fora de git copia so a raiz, como hoje (--arquivo nao existe na copia, exit=%s)\n' "$GOT_FORA"
+else
+  falhou=$((falhou+1)); printf '  FALHA vizinho: raiz fora de git deveria sair 1 com --arquivo nao existe: veio exit=%s\n' "$GOT_FORA"
+  printf '%s\n' "$OUT_FORA" | tail -12 | sed 's/^/        | /'
+fi
+
+# Vizinho 2: raiz igual ao topo. Saida igual a de hoje: a copia do topo e a
+# propria raiz; a bateria roda na raiz e vê o irmao sem subpasta no caminho.
+OUT_TOPO="$(node "$SCRIPT" --raiz "$WCAIXA_609" --arquivo lib/x.js --de 'module.exports = 1;' --para 'module.exports = 2;' --bateria 'node app/teste.js' 2>&1)"
+GOT_TOPO=$?
+if [ "$GOT_TOPO" -eq 0 ] && printf '%s' "$OUT_TOPO" | grep -q 'VERMELHA'; then
+  ok=$((ok+1)); printf '  ok    vizinho: raiz igual ao topo sai 0 com bateria VERMELHA (exit=%s)\n' "$GOT_TOPO"
+else
+  falhou=$((falhou+1)); printf '  FALHA vizinho: raiz igual ao topo deveria sair 0 VERMELHA: veio exit=%s\n' "$GOT_TOPO"
+  printf '%s\n' "$OUT_TOPO" | tail -12 | sed 's/^/        | /'
+fi
+
 echo "-----------------------------------------"
 echo "ok: $ok   falhou: $falhou"
 [ "$falhou" -eq 0 ]

@@ -58,8 +58,8 @@ desperdiçado.
 
 `isolation: "worktree"` em toda chamada de `Agent` que vai tocar arquivo —
 é isto que permite o paralelo: sem isolamento, dois agentes na mesma árvore
-conflitam entre si, e foi por isso que o superpowers proibiu paralelo de
-implementadores. Aqui não precisa proibir porque a trava existe.
+conflitam entre si (a trava dispensa proibir o paralelo). Fora de repo, branch
+`fluxo/<slug>-t<n>`: `references/paralelo-fora-de-repo.md`.
 
 **Agente que edita nunca é retomado por `SendMessage`** — despacha-se de novo,
 com briefing corrigido. O worktree isolado pode não existir mais na retomada, e
