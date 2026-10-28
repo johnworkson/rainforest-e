@@ -1,0 +1,318 @@
+{
+  "slug": "2026-10-27-ferramentas-do-fluxo",
+  "titulo": "Lote A: saude, gate-fechar-issue e esperar-ci sem falso alarme (#608, #592, #594, #587, #591)",
+  "criado_em": "2026-10-27",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-27-ferramentas-do-fluxo.md",
+    "em": "2026-10-27"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-27-ferramentas-do-fluxo.md",
+    "tarefas": 7,
+    "paralelas": [
+      1,
+      3,
+      5
+    ],
+    "em": "2026-10-27"
+  },
+  "executar": {
+    "status": "parcial",
+    "catraca_mutacao": "2026-10-28",
+    "tarefas_ok": 8,
+    "tarefas": 8,
+    "carimbos": [
+      {
+        "tarefa": 1,
+        "hash_base": "2720ed6c",
+        "iteracao": 1,
+        "sessao": "bbe7888f-e761-411a-988c-b38fada6b86e",
+        "ts": "2026-10-27T16:13:20.127Z"
+      },
+      {
+        "tarefa": 3,
+        "hash_base": "2720ed6c",
+        "iteracao": 1,
+        "sessao": "bbe7888f-e761-411a-988c-b38fada6b86e",
+        "ts": "2026-10-27T16:13:20.127Z"
+      },
+      {
+        "tarefa": 5,
+        "hash_base": "2720ed6c",
+        "iteracao": 1,
+        "sessao": "bbe7888f-e761-411a-988c-b38fada6b86e",
+        "ts": "2026-10-27T16:13:20.127Z"
+      },
+      {
+        "tarefa": 1,
+        "hash_base": "45656bb2",
+        "iteracao": 2,
+        "sessao": "bbe7888f-e761-411a-988c-b38fada6b86e",
+        "ts": "2026-10-27T16:51:19.100Z"
+      },
+      {
+        "tarefa": 3,
+        "hash_base": "45656bb2",
+        "iteracao": 2,
+        "sessao": "bbe7888f-e761-411a-988c-b38fada6b86e",
+        "ts": "2026-10-27T16:51:19.100Z"
+      },
+      {
+        "tarefa": 4,
+        "hash_base": "bca86ff8",
+        "iteracao": 1,
+        "sessao": "bbe7888f-e761-411a-988c-b38fada6b86e",
+        "ts": "2026-10-27T16:51:19.100Z"
+      },
+      {
+        "tarefa": 5,
+        "hash_base": "45656bb2",
+        "iteracao": 2,
+        "sessao": "bbe7888f-e761-411a-988c-b38fada6b86e",
+        "ts": "2026-10-27T16:51:19.100Z"
+      }
+    ],
+    "em": "2026-10-28",
+    "comando": "node scripts/conferir-mutacao.cjs (rodada 2: T1 com de emendado sobre testa-saude.sh inteira; achados novos A1 #608-6, A2 D3-1, A4 #608-5, A6 D3-6, B1 g23/g24, B6 594-8) + bash scripts/testa-publicar-branch.sh + bash hooks/testa-gate-fechar-issue.sh + rodada 3: conferir-mutacao M1 (no checks reported) e M2 (filtro so no bloco push) + rodada 4: conferir-mutacao (on: de fluxo; comentario de fim de linha) + rodada 5: conferir-mutacao (varredura do texto inteiro; comentario de fim de linha) + rodada 6: conferir-mutacao (glob so *; lista de bloco no mesmo recuo)",
+    "saida": "T1 mutacao exit=0 (baseline verde 1319793 ms na bateria inteira; VERMELHA em duas rodadas: K, #608-2, #608-3, #608-5); A1 exit=0 (#608-6 vermelho); A2 exit=0 (D3-1 vermelho); A4 exit=0 (#608-5); A6 exit=0 (D3-6); B1 exit=0 (g23, g24); B6 exit=0 (594-8); T4 re-rodada com de emendado exit=0 (g9, g17, g19 vermelhos); testa-publicar-branch 72 ok; testa-gate-fechar-issue 409 ok; testa-config 74 ok; rodada 3: M1 exit=0 (g25 vermelho), M2 exit=0 (g27, g28 vermelhos); testa-publicar-branch 76 ok; rodada 4: on: de fluxo exit=0 (g29 vermelho), comentario exit=0 (g30 vermelho); testa-publicar-branch 78 ok; rodada 5: varredura exit=0 (g31, g32 vermelhos), comentario exit=0 (g30); testa-publicar-branch 80 ok; rodada 6: glob exit=0 (g33, g34 vermelhos), lista exit=0 (g33); testa-publicar-branch 83 ok; rodada 7: so comentario, testa-publicar-branch 83 ok",
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-saude.sh #608-2 clone raso 1 commit atras vira aviso (de: const rasoLa = cloneRaso(instalado); para: const rasoLa = false;)"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-saude.sh D3-1 bench sem override nao gera ALERTA de autocompact e plugin instalado nao cita as ignoradas"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-publicar-branch.sh (g18) watch cai com checks pending: sai 69"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "vermelho",
+        "fixture": "testa-publicar-branch.sh (g19) workflow com pull_request e PR sem check: sai 5 (de: if pull_request return true; para: return false); g25 formato do gh real sai 5 e g27/g28 filtro so no bloco push (mutacoes da revisao 2, exit 0); g29/g30 on: de fluxo e comentario (revisao 3, exit 0); g31/g32 filhos diretos do on: (revisao 4, exit 0); g33-g35 glob de branch (revisao 5, exit 0)"
+      },
+      {
+        "tarefa": 5,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-fechar-issue.sh 594-1 pr create -R com marcador, cwd fora de repo: exit 0"
+      },
+      {
+        "tarefa": 6,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-fechar-issue.sh #592 forma prescrita pelo /feedback passa pelo gate"
+      },
+      {
+        "tarefa": 7,
+        "resultado": "n/a",
+        "motivo": "tarefa so troca versao, README e texto de skill; nao ha comportamento executavel a inverter"
+      },
+      {
+        "tarefa": 8,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-fechar-issue.sh 594m pr merge <URL de outro repo> com Closes: consulta no repo da URL e barra"
+      }
+    ],
+    "reaberturas": 2
+  },
+  "revisar": {
+    "status": "pendente",
+    "snapshot": {
+      "head": "bc14feaeff7e36f00d4d35dfc1ee1e9e0f23aa6b",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a6f0299d31805d4a6",
+        "veredito": "ok",
+        "em": "2026-10-28",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/bbe7888f-e761-411a-988c-b38fada6b86e/subagents/agent-a6f0299d31805d4a6.jsonl"
+      }
+    ],
+    "em_voo": [],
+    "em": "2026-10-28",
+    "achados": 0,
+    "voltas": [
+      {
+        "volta": 1,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a9e24f3684c6f4035",
+            "veredito": "reprovado",
+            "em": "2026-10-27",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/bbe7888f-e761-411a-988c-b38fada6b86e/subagents/agent-a9e24f3684c6f4035.jsonl"
+          },
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a2af677382b254a14",
+            "veredito": "ok",
+            "em": "2026-10-27",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/bbe7888f-e761-411a-988c-b38fada6b86e/subagents/agent-a2af677382b254a14.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 2,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a5d6fecf343d6fbc7",
+            "veredito": "reprovado",
+            "em": "2026-10-27",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/bbe7888f-e761-411a-988c-b38fada6b86e/subagents/agent-a5d6fecf343d6fbc7.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 3,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a538e45f58399b957",
+            "veredito": "ok",
+            "em": "2026-10-28",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/bbe7888f-e761-411a-988c-b38fada6b86e/subagents/agent-a538e45f58399b957.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 4,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "adc318faefe3e4e48",
+            "veredito": "ok",
+            "em": "2026-10-28",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/bbe7888f-e761-411a-988c-b38fada6b86e/subagents/agent-adc318faefe3e4e48.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 5,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "abe6ed5d17661db51",
+            "veredito": "ok",
+            "em": "2026-10-28",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/bbe7888f-e761-411a-988c-b38fada6b86e/subagents/agent-abe6ed5d17661db51.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 6,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "ad3c3990e889a5ac1",
+            "veredito": "ok",
+            "em": "2026-10-28",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/bbe7888f-e761-411a-988c-b38fada6b86e/subagents/agent-ad3c3990e889a5ac1.jsonl"
+          }
+        ]
+      }
+    ],
+    "base": "2720ed6c",
+    "head": "bc14feae"
+  },
+  "verificar": {
+    "status": "pendente",
+    "em": "2026-10-28",
+    "comando": "bash scripts/testa-publicar-branch.sh; bash scripts/testa-config.sh; bash scripts/testa-gate-fechar-issue.sh; node scripts/conferir-versao.cjs; node scripts/conferir-fluxo.cjs mutacoes --slug 2026-10-27-ferramentas-do-fluxo",
+    "saida": "testa-publicar-branch: 83 ok, 0 falha (exit 0); testa-config: 74 ok (exit 0); testa-gate-fechar-issue: 409 ok (exit 0); conferir-versao: ok versao 2.0.5 (exit 0); chaves: gate-fechar-issue,saude-ignorar-config-dirs; formas T1-T8 conferidas por grep; T6 Segue #<n> presente, CORRIGE ausente; testa-saude verde (22 min). catraca:\ntarefa 1: vermelho\ntarefa 2: vermelho\ntarefa 3: vermelho\ntarefa 4: vermelho\ntarefa 5: vermelho\ntarefa 6: vermelho\ntarefa 8: vermelho\ntarefa 7: pulada (n/a — bump de versão e texto; o comportamento é medido pelas tarefas 1–6 e pela trava `conferir-versao`)",
+    "head": "16f1033dfa091fcefb6e33115f2c90ff6d11348c"
+  },
+  "fechar": {
+    "status": "pendente",
+    "em": "2026-10-28"
+  },
+  "decididos": [
+    {
+      "pergunta": "D2 cobre so o clone raso ou qualquer lado raso?",
+      "escolha": "qualquer lado raso; aviso de raso cede ao ALERTA de skill faltando",
+      "porque": "revisor A reproduziu fonte rasa dando sem parentesco com reset --hard; mesma direcao da D2",
+      "estagio": "executar",
+      "em": "2026-10-28T00:52:07.885Z"
+    },
+    {
+      "pergunta": "push com branches-ignore ou glob conta como CI de PR (D5)?",
+      "escolha": "conta; so branches: de nomes fixos tira o push",
+      "porque": "revisor B: a leitura anterior dava 8 (merge sem CI) para branches-ignore e [\"**\"]; D5 ja dizia nunca 8 indevido",
+      "estagio": "executar",
+      "em": "2026-10-28T00:52:08.235Z"
+    },
+    {
+      "pergunta": "branches: fora do bloco push filtra o push (D5)?",
+      "escolha": "nao; so branches: dentro do bloco push: tira o push",
+      "porque": "revisor da rodada 2: branches: de workflow_run/with:/comentario dava 8 indevido com push sem filtro",
+      "estagio": "executar",
+      "em": "2026-10-28T02:56:35.295Z"
+    },
+    {
+      "pergunta": "releitura com 'no checks reported' (gh real, exit 1, stdout vazio) e 5 ou 69 (D4)?",
+      "escolha": "5, como o plano ja mandava para lista vazia",
+      "porque": "gh 2.96 real nao devolve [] sem check; o stub escondia o caso e o codigo dava 69",
+      "estagio": "executar",
+      "em": "2026-10-28T02:56:35.397Z"
+    },
+    {
+      "pergunta": "on: push inline e comentario de fim de linha filtram o push (D5)?",
+      "escolha": "nao; on: de fluxo com push conta sempre, comentario sai antes da busca",
+      "porque": "revisor da rodada 3: os dois davam 8 indevido",
+      "estagio": "executar",
+      "em": "2026-10-28T03:06:57.949Z"
+    },
+    {
+      "pergunta": "como ler o filtro do push sem remendar forma a forma (D5)?",
+      "escolha": "so os filhos diretos do on: de topo em bloco; fora da forma exata push: + branches: fixos, conta",
+      "porque": "revisor da rodada 4 achou mais 5 formas de on: com 8 indevido; a leitura positiva fecha a familia",
+      "estagio": "executar",
+      "em": "2026-10-28T03:15:50.377Z"
+    },
+    {
+      "pergunta": "o que e glob de branch no filtro do push (D5)?",
+      "escolha": "*, ?, + e [...], so no valor de branches:",
+      "porque": "revisor da rodada 5: [a-z] e ? davam 8 indevido; * de paths: nao e filtro de branch",
+      "estagio": "executar",
+      "em": "2026-10-28T03:25:29.357Z"
+    }
+  ],
+  "reaberturas": [
+    {
+      "em": "2026-10-28",
+      "de": "revisar",
+      "motivo": "revisao 3 [baixa]: pushSoEmNomesFixos da 8 indevido com on: push inline + push: em with:, e com comentario de fim de linha citando branches:"
+    },
+    {
+      "em": "2026-10-28",
+      "de": "revisar",
+      "motivo": "revisao 4 [media]: on: em varias linhas (- push, [push], push, push: {}) com push: de with: filtrado da 8 indevido; ler so os filhos diretos do on: de topo"
+    },
+    {
+      "em": "2026-10-28",
+      "de": "revisar",
+      "motivo": "revisao 5 [baixa]: so * contava como glob; ?, + e [...] tambem sao glob de branch e davam 8 indevido"
+    },
+    {
+      "em": "2026-10-28",
+      "de": "revisar",
+      "motivo": "revisao 6 [baixa]: comentarios de alcancaPr e pushSoEmNomesFixos ainda dizem * no bloco inteiro"
+    },
+    {
+      "em": "2026-10-28",
+      "de": "verificar",
+      "motivo": "CI do PR #615 vermelho: ancora binaria do corpo de fechar/SKILL.md (contrato-plugin-codex.cjs) e bytes das elaboracoes (testa-abertura-mod-config.sh) nao acompanharam a tarefa 7"
+    }
+  ]
+}

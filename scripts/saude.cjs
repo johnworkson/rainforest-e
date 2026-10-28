@@ -52,6 +52,19 @@ function rodar(cmd, args, opts = {}) {
   }
 }
 
+// Clone RASO é o que `git clone --depth` deixa para trás: o `.git/shallow` existe e
+// o histórico para no commit de fronteira. Descobrir isso é a primeira pergunta da
+// checagem de parentesco (#608), porque num clone raso o discriminador de raiz
+// (`rev-list --max-parents=0`) devolve o próprio commit de fronteira, e não a raiz
+// real do repo — e a checagem concluía "sem parentesco" com o clone em dia.
+// Só status 0 com a saída `true` conta como raso; qualquer outra coisa (inclusive
+// git ausente ou diretório que não é repo) fica como não raso, que é o comportamento
+// de antes desta função existir.
+function cloneRaso(dir) {
+  const r = rodar(caminhoExecutavel('git'), ['rev-parse', '--is-shallow-repository'], { cwd: dir });
+  return r.status === 0 && r.out === 'true';
+}
+
 // ---------------------------------------------------------------- 1. raiz de dados
 // A pergunta que nenhum checador oficial faz: estes dados são SEUS?
 function checarRaiz() {
@@ -235,6 +248,55 @@ function manifestoDoPlugin(raiz) {
   return { nome: path.basename(raiz), versao: null };
 }
 
+// Config dirs que existem na maquina mas NAO sao conta de trabalho: sandbox de
+// benchmark (`.claude-bench-*`) e conta aposentada (`.claude-*.aposentada`). Elas
+// tem `settings.json` e `plugins/` do harness, entao a varredura as pega, e comparar
+// uma sandbox com a conta real acusa ALERTA falso (Issue #608, 2026-10-27).
+const IGNORADAS_DE_FABRICA = ['*bench*', '*.aposentada'];
+
+/**
+ * Casa um nome com um padrao em que `*` e o unico curinga; sem diferenciar caixa.
+ * Sem regex de proposito: `*a*a*...*b` virava `.*a.*a...` com backtracking
+ * exponencial, e o padrao vem da config do projeto, que vem do repo. Aqui cada
+ * pedaco entre `*` e procurado uma vez, da esquerda para a direita — o primeiro
+ * encaixe mais a esquerda nunca impede um encaixe que existiria mais adiante.
+ */
+function casaPadrao(nome, padrao) {
+  const n = nome.toLowerCase();
+  const pedacos = padrao.toLowerCase().split('*');
+  if (pedacos.length === 1) return n === pedacos[0];
+  const primeiro = pedacos[0];
+  const ultimo = pedacos[pedacos.length - 1];
+  if (n.length < primeiro.length + ultimo.length || !n.startsWith(primeiro) || !n.endsWith(ultimo)) return false;
+  const fim = n.length - ultimo.length;
+  let pos = primeiro.length;
+  for (const pedaco of pedacos.slice(1, -1)) {
+    const i = n.indexOf(pedaco, pos);
+    if (i === -1 || i + pedaco.length > fim) return false;
+    pos = i + pedaco.length;
+  }
+  return true;
+}
+
+/**
+ * Padroes de config dir que o /saude nao compara, lidos da chave
+ * `saude-ignorar-config-dirs`. Array vale como esta (inclusive `[]`, que diz "nao
+ * ignore nenhuma"); `null`, ausente ou config ilegivel caem no de fabrica.
+ */
+function padroesIgnorados() {
+  try {
+    const { resolverConfig } = require(path.join(__dirname, '..', 'hooks', 'lib', 'config.cjs'));
+    const valor = resolverConfig().valores['saude-ignorar-config-dirs'];
+    if (Array.isArray(valor)) return valor;
+  } catch { /* sem config legivel: vale o padrao de fabrica */ }
+  return IGNORADAS_DE_FABRICA;
+}
+
+/** Diz se um nome de config dir cai num dos padroes ignorados. */
+function configDirIgnorada(nome, padroes) {
+  return padroes.some((p) => casaPadrao(nome, p));
+}
+
 /**
  * Config dirs do harness a inspecionar.
  *
@@ -253,10 +315,15 @@ function configDirsDoHarness() {
   if (process.env.CLAUDE_CONFIG_DIR) return [path.resolve(process.env.CLAUDE_CONFIG_DIR)];
   const home = process.env.USERPROFILE || process.env.HOME || '';
   if (!home) return [];
+  // Padroes ignorados saem da varredura da home (#608 D3): sandbox de bench e conta
+  // aposentada nao sao conta de trabalho. So neste ramo; com CLAUDE_CONFIG_DIR
+  // declarado a declaracao manda e nada muda.
+  const padroes = padroesIgnorados();
   try {
     return fs.readdirSync(home)
       .filter((n) => n === '.claude' || n.startsWith('.claude-'))
       .map((n) => path.join(home, n))
+      .filter((d) => !configDirIgnorada(path.basename(d), padroes))
       .filter((d) => fs.existsSync(path.join(d, 'plugins')))
       .map((d) => path.resolve(d));
   } catch {
@@ -308,10 +375,13 @@ function instalacoesRegistradas(configDir, nome) {
 function todasAsConfigDirsDaHome() {
   const home = process.env.USERPROFILE || process.env.HOME || '';
   if (!home) return [];
+  // Mesmo filtro de padroes ignorados de configDirsDoHarness (#608 D3).
+  const padroes = padroesIgnorados();
   try {
     return fs.readdirSync(home)
       .filter((n) => n === '.claude' || n.startsWith('.claude-'))
       .map((n) => path.join(home, n))
+      .filter((d) => !configDirIgnorada(path.basename(d), padroes))
       .filter((d) => fs.existsSync(path.join(d, 'plugins')))
       .map((d) => path.resolve(d));
   } catch {
@@ -627,6 +697,7 @@ function avaliarClone(instalado, nome, instalacoes) {
   // ausente: a interrogação parece ruído de ferramenta, não achado.
   let atrasoCommit = '';
   let semParentesco = false;
+  let rasoSemCommit = '';
   if (aqui.status === 0 && la.status === 0 && aqui.out !== la.out) {
     // O DISCRIMINADOR É O COMMIT RAIZ, e a primeira versão disto errou.
     //
@@ -644,11 +715,43 @@ function avaliarClone(instalado, nome, instalacoes) {
       const r = rodar(caminhoExecutavel('git'), ['rev-list', '--max-parents=0', 'HEAD'], { cwd: dir });
       return r.status === 0 ? r.out.split('\n').pop().trim() : null;
     };
+    // CLONE RASO (#608, 2026-10-27): `/saude` deu ALERTA "sem parentesco" com o clone
+    // do marketplace em dia, e a saída ainda mandava rodar `reset --hard`. Causa: o
+    // clone virou raso (`.git/shallow` apontando para 0533241), a raiz dele é a
+    // fronteira e não a raiz real do repo (209e0f63), e a comparação de raízes
+    // concluía histórias diferentes. Num raso a comparação de raízes não diz nada —
+    // a fronteira sempre difere da raiz verdadeira.
+    //
+    // O que o raso ainda sabe responder: se o commit do clone EXISTE aqui. Existe →
+    // é o caso normal, e a contagem de atraso abaixo responde. Não existe → ou é
+    // commit próprio do clone, ou é história reescrita. Num clone raso essas duas
+    // são indistinguíveis, então o relato é AVISO e nunca alerta com `reset --hard`:
+    // reaponte à mão se for história reescrita, mas o comando automático destruiria
+    // um commit próprio que só existe na cópia instalada.
+    //
+    // O MESMO vale com a FONTE rasa (checkout de CI, `clone --depth`) e o clone
+    // completo: a raiz daqui é a fronteira, e a comparação acusava "sem parentesco"
+    // com `reset --hard` na ação. Qualquer lado raso troca a pergunta.
+    //
+    // O aviso não sai daqui direto: guardado em `rasoSemCommit`, ele cede a vez ao
+    // ALERTA de skill faltando abaixo, que o caminho não raso também mostraria.
+    const rasoLa = cloneRaso(instalado);
+    const raso = rasoLa || cloneRaso(RAIZ_CODIGO);
     const raizAqui = raizDe(RAIZ_CODIGO);
     const raizLa = raizDe(instalado);
     const par = `(${la.out.slice(0, 7)} vs ${aqui.out.slice(0, 7)})`;
 
-    if (raizAqui && raizLa && raizAqui !== raizLa) {
+    if (raso) {
+      const existe = rodar(caminhoExecutavel('git'), ['cat-file', '-e', `${la.out}^{commit}`], { cwd: RAIZ_CODIGO });
+      if (existe.status !== 0) {
+        rasoSemCommit = `${rasoLa ? 'o clone' : 'este repositorio'} e raso e o commit ${la.out.slice(0, 7)} nao existe aqui `
+          + '(commit proprio ou historia reescrita — repositorio raso nao distingue)';
+      }
+    }
+
+    if (rasoSemCommit) {
+      // Sem história para contar atraso nem para julgar parentesco.
+    } else if (!raso && raizAqui && raizLa && raizAqui !== raizLa) {
       semParentesco = true;
     } else {
       const n = rodar(caminhoExecutavel('git'), ['rev-list', '--count', `${la.out}..HEAD`], { cwd: RAIZ_CODIGO });
@@ -689,8 +792,16 @@ function avaliarClone(instalado, nome, instalacoes) {
     return {
       nivel: 'alerta',
       detalhe: `carregado sem ${faltando.length} skill(s): ${faltando.join(', ')}`
-        + (atrasoCommit ? `; ${atrasoCommit}` : ''),
+        + (atrasoCommit ? `; ${atrasoCommit}` : '')
+        + (rasoSemCommit ? `; ${rasoSemCommit}` : ''),
       acao: atualiza,
+    };
+  }
+  if (rasoSemCommit) {
+    return {
+      nivel: 'aviso',
+      detalhe: rasoSemCommit,
+      acao: 'nada automatico: confira na origem se o commit do clone existe antes de mexer nele',
     };
   }
   if (atrasoCommit) {
@@ -816,11 +927,15 @@ function checarAutocompact() {
   const CHAVES_DO_HARNESS = ['env', 'model', 'hooks', 'permissions', 'statusLine',
     'enabledPlugins', 'outputStyle', 'defaultView', 'effortLevel'];
 
+  // Sandbox de bench e conta aposentada tem o `settings.json` do harness e entrariam
+  // aqui com `(nao definido)`, gerando o ALERTA de divergencia falso (#608 D3).
+  const padroes = padroesIgnorados();
   let candidatas;
   try {
     candidatas = fs.readdirSync(home)
       .filter((n) => n === '.claude' || n.startsWith('.claude-'))
       .map((n) => path.join(home, n))
+      .filter((d) => !configDirIgnorada(path.basename(d), padroes))
       .filter((d) => fs.existsSync(path.join(d, 'settings.json')));
   } catch {
     return;

@@ -23,6 +23,12 @@ mkdir -p "$SBP/bin"
 cat > "$SBP/bin/gh" <<'STUB'
 #!/usr/bin/env node
 if (process.argv[2] === 'issue' && process.argv[3] === 'view') {
+  // (#594) com GH_ISSUE_VIEW_EXIGE_REPO=1, o issue view só funciona com --repo caixa/repo.
+  const iRepo = process.argv.indexOf('--repo');
+  if (process.env.GH_ISSUE_VIEW_EXIGE_REPO === '1' && !(iRepo !== -1 && process.argv[iRepo + 1] === 'caixa/repo')) {
+    process.stderr.write('failed to run git: fatal: not a git repository\n');
+    process.exit(1);
+  }
   if (process.env.GH_COM_MARCADOR === '1') {
     console.log(JSON.stringify({comments:[{body:'<!-- rainforest-evidencia --> Marcador presente'}]}));
   } else {
@@ -38,7 +44,27 @@ chmod +x "$SBP/bin/gh"
 # (ordem de extensões .cmd/.bat/.exe/'') de fato escolhe nesta caixa.
 cat > "$SBP/bin/gh.cmd" <<'STUB'
 @echo off
+rem #594 com GH_ISSUE_VIEW_EXIGE_REPO=1, o issue view so funciona com --repo caixa/repo.
+rem GH_ISSUE_VIEW_SAIDA=vazio (exit 0, stdout vazio) ou lixo (exit 0, nao e JSON) simula leitura sem conteudo.
 if "%1"=="issue" if "%2"=="view" (
+  if "%GH_ISSUE_VIEW_EXIGE_REPO%"=="1" (
+    echo %* | findstr /C:"--repo caixa/repo" >nul || goto :semrepo
+  )
+  if "%GH_ISSUE_VIEW_SAIDA%"=="vazio" exit /b 0
+  if "%GH_ISSUE_VIEW_SAIDA%"=="lixo" (
+    echo nao e json
+    exit /b 0
+  )
+  if "%GH_ISSUE_VIEW_SAIDA%"=="objeto" (
+    echo {}
+    exit /b 0
+  )
+  rem #594 merge por URL: com GH_MARCADOR_SO_SEM_REPO=1 o marcador so aparece SEM --repo.
+  if "%GH_MARCADOR_SO_SEM_REPO%"=="1" (
+    echo %* | findstr /C:"--repo" >nul && goto :issuecomrepo
+    echo {"comments":[{"body":"<!-- rainforest-evidencia --> Marcador presente"}]}
+    exit /b 0
+  )
   if "%GH_COM_MARCADOR%"=="1" (
     echo {"comments":[{"body":"<!-- rainforest-evidencia --> Marcador presente"}]}
   ) else (
@@ -60,12 +86,30 @@ if "%1"=="pr" if "%2"=="view" (
   exit /b 0
 )
 exit /b 0
+:semrepo
+>&2 echo failed to run git: fatal: not a git repository
+exit /b 1
+:issuecomrepo
+echo {"comments":[{"body":"Sem marcador aqui"}]}
+exit /b 0
 STUB
 
 # Também criar versão shell para bash, caso resolvedor procure sem extensão
 cat > "$SBP/bin/gh" <<'STUB'
 #!/bin/bash
 if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+  # (#594) com GH_ISSUE_VIEW_EXIGE_REPO=1, o issue view só funciona com --repo caixa/repo.
+  if [ "${GH_ISSUE_VIEW_EXIGE_REPO:-}" = "1" ]; then
+    case " $* " in *" --repo caixa/repo "*) ;; *) echo "failed to run git: fatal: not a git repository" >&2; exit 1 ;; esac
+  fi
+  if [ "${GH_ISSUE_VIEW_SAIDA:-}" = "vazio" ]; then exit 0; fi
+  if [ "${GH_ISSUE_VIEW_SAIDA:-}" = "lixo" ]; then echo "nao e json"; exit 0; fi
+  if [ "${GH_ISSUE_VIEW_SAIDA:-}" = "objeto" ]; then echo '{}'; exit 0; fi
+  # (#594 merge por URL) com GH_MARCADOR_SO_SEM_REPO=1 o marcador so aparece SEM --repo.
+  if [ "${GH_MARCADOR_SO_SEM_REPO:-}" = "1" ]; then
+    case " $* " in *" --repo "*) echo '{"comments":[{"body":"Sem marcador aqui"}]}' ;; *) echo '{"comments":[{"body":"<!-- rainforest-evidencia --> Marcador presente"}]}' ;; esac
+    exit 0
+  fi
   if [ "$GH_COM_MARCADOR" = "1" ]; then
     echo '{"comments":[{"body":"<!-- rainforest-evidencia --> Marcador presente"}]}'
   else
@@ -137,7 +181,7 @@ echo "== (b) gh pr create com closes #12 SEM marcador → exit 2 =="
 (
   export PATH="$SBP/bin:$PATH"
   export GH_COM_MARCADOR=""
-  PAYLOAD='{"cwd":"'"$SBP"'","tool_name":"Bash","tool_input":{"command":"gh pr create --body \"closes #12\""}}'
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr create --body \"closes #12\""}}'
   echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
 ) 2>"$SBP/err-b"
 EXIT_B=$?
@@ -155,7 +199,7 @@ echo "== (c) gh pr create com closes #12 COM marcador → exit 0 =="
 (
   export PATH="$SBP/bin:$PATH"
   export GH_COM_MARCADOR=1
-  PAYLOAD='{"cwd":"'"$SBP"'","tool_name":"Bash","tool_input":{"command":"gh pr create --body \"closes #12\""}}'
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr create --body \"closes #12\""}}'
   echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
 ) 2>"$SBP/err-c"
 EXIT_C=$?
@@ -3379,6 +3423,181 @@ printf 'echo fim\n' > "$SBP/cadeia414-12.sh"
 rodar414 '. ./cadeia414-1.sh'
 E414=$?
 [ $E414 -eq 2 ] && test_ok "414-14 encadeamento sem fim barra pelo teto" || test_fail "414-14 encadeamento sem fim barra pelo teto (exit $E414: $(head -c 300 "$SBP/err-414"))"
+
+# #594: a leitura da Issue leva o --repo do próprio comando. Sem ele, fora de
+# repositório, o gh falha: o gate bloqueia com mensagem própria (não manda
+# comentar a evidência, que pode já estar lá). GH_ISSUE_VIEW_EXIGE_REPO=1 faz o
+# stub reproduzir essa falha; sem a variável, o stub se comporta como antes.
+echo
+echo "== #594 leitura da Issue com --repo, falha de leitura com mensagem própria =="
+
+# (594-1) pr create -R x/y com Closes #12 e marcador, cwd fora de repo → exit 0
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR=1 GH_ISSUE_VIEW_EXIGE_REPO=1
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr create -R caixa/repo --body \"Closes #12\""}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594-1"
+EXIT_594_1=$?
+[ $EXIT_594_1 -eq 0 ] && test_ok "594-1 pr create -R caixa/repo com marcador, cwd fora de repo: exit 0" || test_fail "594-1 pr create -R caixa/repo com marcador, cwd fora de repo: exit 0 (foi $EXIT_594_1: $(cat "$SBP/err-594-1"))"
+
+# (594-2) mesmo comando, Issue sem marcador → exit 2 com a mensagem de hoje
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR="" GH_ISSUE_VIEW_EXIGE_REPO=1
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr create -R caixa/repo --body \"Closes #12\""}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594-2"
+EXIT_594_2=$?
+[ $EXIT_594_2 -eq 2 ] && test_ok "594-2 Issue sem marcador: exit 2" || test_fail "594-2 Issue sem marcador: exit 2 (foi $EXIT_594_2)"
+ERR_594_2="$(cat "$SBP/err-594-2")"
+echo "$ERR_594_2" | grep -qF "não tem comentário com a evidência" && test_ok "594-2 stderr com a mensagem de hoje" || test_fail "594-2 stderr sem a mensagem de hoje ($ERR_594_2)"
+
+# (594-3) pr create sem -R, cwd fora de repo → exit 2 com mensagem de leitura, sem a de evidência
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR=1 GH_ISSUE_VIEW_EXIGE_REPO=1
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr create --body \"Closes #12\""}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594-3"
+EXIT_594_3=$?
+[ $EXIT_594_3 -eq 2 ] && test_ok "594-3 sem -R fora de repo: exit 2" || test_fail "594-3 sem -R fora de repo: exit 2 (foi $EXIT_594_3)"
+ERR_594_3="$(cat "$SBP/err-594-3")"
+echo "$ERR_594_3" | grep -qF "não consegui ler a Issue #12" && test_ok "594-3 stderr diz que não conseguiu ler a Issue #12" || test_fail "594-3 stderr sem 'não consegui ler a Issue #12' ($ERR_594_3)"
+echo "$ERR_594_3" | grep -qF "não tem comentário" && test_fail "594-3 stderr contém 'não tem comentário' (mensagem errada)" || test_ok "594-3 stderr não diz 'não tem comentário'"
+echo "$ERR_594_3" | grep -qF "gh issue comment" && test_fail "594-3 stderr manda comentar a evidência (não deve)" || test_ok "594-3 stderr não manda comentar a evidência"
+
+# (594-4) contornos que continuam bloqueados sem marcador
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR="" GH_ISSUE_VIEW_EXIGE_REPO=1
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr create -R caixa/repo --body \"Fixes #12\""}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594-4a"
+EXIT_594_4A=$?
+[ $EXIT_594_4A -eq 2 ] && test_ok "594-4a pr create -R caixa/repo com Fixes #12 sem marcador: exit 2" || test_fail "594-4a pr create -R caixa/repo com Fixes #12 sem marcador: exit 2 (foi $EXIT_594_4A)"
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR="" GH_ISSUE_VIEW_EXIGE_REPO=1
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh issue close 12 -R caixa/repo"}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594-4b"
+EXIT_594_4B=$?
+[ $EXIT_594_4B -eq 2 ] && test_ok "594-4b gh issue close 12 -R caixa/repo: exit 2" || test_fail "594-4b gh issue close 12 -R caixa/repo: exit 2 (foi $EXIT_594_4B)"
+
+# (594-5) vizinhos que continuam liberados
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR="" GH_ISSUE_VIEW_EXIGE_REPO=1
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr create --body \"Segue #12\""}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594-5"
+EXIT_594_5=$?
+[ $EXIT_594_5 -eq 0 ] && test_ok "594-5 pr create com Segue #12: exit 0" || test_fail "594-5 pr create com Segue #12: exit 0 (foi $EXIT_594_5: $(cat "$SBP/err-594-5"))"
+
+# (594-6) D6: gh issue view sai 0 com stdout VAZIO → leitura falha, não "sem marcador"
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR="" GH_ISSUE_VIEW_SAIDA=vazio
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr create --body \"Closes #12\""}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594-6"
+EXIT_594_6=$?
+[ $EXIT_594_6 -eq 2 ] && test_ok "594-6 stdout vazio com exit 0: exit 2" || test_fail "594-6 stdout vazio com exit 0: exit 2 (foi $EXIT_594_6)"
+ERR_594_6="$(cat "$SBP/err-594-6")"
+echo "$ERR_594_6" | grep -qF "não consegui ler a Issue #12" && test_ok "594-6 stderr diz que não conseguiu ler" || test_fail "594-6 stderr sem 'não consegui ler a Issue #12' ($ERR_594_6)"
+echo "$ERR_594_6" | grep -qF "não tem comentário" && test_fail "594-6 stderr diz 'não tem comentário' (leitura lida como ausência)" || test_ok "594-6 stderr não diz 'não tem comentário'"
+
+# (594-7) D6: gh issue view sai 0 com stdout NÃO-JSON → leitura falha
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR="" GH_ISSUE_VIEW_SAIDA=lixo
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr create --body \"Closes #12\""}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594-7"
+EXIT_594_7=$?
+[ $EXIT_594_7 -eq 2 ] && test_ok "594-7 stdout não-JSON com exit 0: exit 2" || test_fail "594-7 stdout não-JSON com exit 0: exit 2 (foi $EXIT_594_7)"
+ERR_594_7="$(cat "$SBP/err-594-7")"
+echo "$ERR_594_7" | grep -qF "não consegui ler a Issue #12" && test_ok "594-7 stderr diz que não conseguiu ler" || test_fail "594-7 stderr sem 'não consegui ler a Issue #12' ($ERR_594_7)"
+
+# (594-8) D6: gh issue view sai 0 com JSON sem `comments` ({}) → leitura falha, não "sem marcador"
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR="" GH_ISSUE_VIEW_SAIDA=objeto
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr create --body \"Closes #12\""}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594-8"
+EXIT_594_8=$?
+[ $EXIT_594_8 -eq 2 ] && test_ok "594-8 JSON sem comments com exit 0: exit 2" || test_fail "594-8 JSON sem comments com exit 0: exit 2 (foi $EXIT_594_8)"
+ERR_594_8="$(cat "$SBP/err-594-8")"
+echo "$ERR_594_8" | grep -qF "não consegui ler a Issue #12" && test_ok "594-8 stderr diz que não conseguiu ler" || test_fail "594-8 stderr sem 'não consegui ler a Issue #12' ($ERR_594_8)"
+
+# #592: a forma prescrita pelo /feedback tem de passar pelo gate. A extração lê
+# o commands/feedback.md REAL do repo; a frase "na primeira linha:" quebra linha
+# no arquivo, então o texto é normalizado (espaços colapsados) antes do regex.
+# Se a forma não for achada, a forma fica vazia e o caso FALHA (nunca pula).
+echo
+echo "== #592 forma prescrita pelo /feedback =="
+FORMA_592="$(node -e '
+const fs = require("fs");
+const t = fs.readFileSync(process.argv[1], "utf8").replace(/\s+/g, " ");
+const m = t.match(/na primeira linha:\s*`([^`]*)`/);
+process.stdout.write(m ? m[1] : "");
+' "$SRC/commands/feedback.md")"
+FORMA_592="${FORMA_592//'<n>'/591}"
+FORMA_592="${FORMA_592//'...'/texto}"
+[ -n "$FORMA_592" ] && test_ok "592 forma extraída de commands/feedback.md não é vazia ($FORMA_592)" || test_fail "592 forma extraída de commands/feedback.md é vazia (o regex 'na primeira linha: \`...\`' não achou nada)"
+
+# Sem forma, o gate não roda com um título vazio (que passaria e mascararia a falha).
+if [ -n "$FORMA_592" ]; then
+  (
+    export PATH="$SBP/bin:$PATH"
+    PAYLOAD_592="$(node -e 'const [cwd,cmd]=process.argv.slice(1);process.stdout.write(JSON.stringify({cwd,tool_name:"Bash",tool_input:{command:cmd}}))' "$SBP_WIN" "gh issue create --title \"$FORMA_592\" --body \"$FORMA_592\"")"
+    echo "$PAYLOAD_592" | node "$SRC/hooks/gate-fechar-issue.cjs"
+  ) 2>"$SBP/err-592"
+  EXIT_592=$?
+else
+  EXIT_592=99
+  : > "$SBP/err-592"
+fi
+[ $EXIT_592 -eq 0 ] && test_ok "forma prescrita pelo /feedback passa pelo gate" || test_fail "forma prescrita pelo /feedback passa pelo gate (exit $EXIT_592: $(cat "$SBP/err-592"))"
+
+# #594 merge por URL: `gh pr merge <URL>` consulta a Issue no repo da URL, não no
+# repo do cwd. O stub acha marcador SÓ sem --repo (GH_MARCADOR_SO_SEM_REPO=1), então
+# a Issue homônima com marcador no cwd não pode liberar o merge da URL.
+echo
+echo "== #594 merge por URL =="
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR="" GH_MARCADOR_SO_SEM_REPO=1
+  export GH_PR_VIEW_BODY="Closes #12"
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr merge https://github.com/caixa/repo/pull/7 --squash"}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594m-1"
+EXIT_594M_1=$?
+[ $EXIT_594M_1 -eq 2 ] && test_ok "594m-1 pr merge <URL caixa/repo> com Closes #12, marcador só sem --repo: exit 2" || test_fail "594m-1 pr merge <URL caixa/repo> com Closes #12, marcador só sem --repo: exit 2 (foi $EXIT_594M_1: $(cat "$SBP/err-594m-1"))"
+ERR_594M_1="$(cat "$SBP/err-594m-1")"
+echo "$ERR_594M_1" | grep -qF "Issue #12 não tem comentário" && test_ok "594m-1 stderr cita a Issue #12 sem evidência" || test_fail "594m-1 stderr sem 'Issue #12 não tem comentário' ($ERR_594M_1)"
+
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR=1
+  export GH_PR_VIEW_BODY="Closes #12"
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr merge https://github.com/caixa/repo/pull/7 --squash"}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594m-2"
+EXIT_594M_2=$?
+[ $EXIT_594M_2 -eq 0 ] && test_ok "594m-2 mesma URL com marcador (com e sem --repo): exit 0" || test_fail "594m-2 mesma URL com marcador: exit 0 (foi $EXIT_594M_2: $(cat "$SBP/err-594m-2"))"
+
+(
+  export PATH="$SBP/bin:$PATH"
+  export GH_COM_MARCADOR="" GH_MARCADOR_SO_SEM_REPO=1
+  export GH_PR_VIEW_BODY="Closes #12"
+  PAYLOAD='{"cwd":"'"$SBP_WIN"'","tool_name":"Bash","tool_input":{"command":"gh pr merge 7 --squash"}}'
+  echo "$PAYLOAD" | node "$SRC/hooks/gate-fechar-issue.cjs"
+) 2>"$SBP/err-594m-3"
+EXIT_594M_3=$?
+[ $EXIT_594M_3 -eq 0 ] && test_ok "594m-3 pr merge 7 (número, sem URL) com marcador sem --repo: exit 0 (consulta no cwd)" || test_fail "594m-3 pr merge 7 (número): exit 0 (foi $EXIT_594M_3: $(cat "$SBP/err-594m-3"))"
 
 # Resultado final
 echo

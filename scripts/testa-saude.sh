@@ -1613,6 +1613,204 @@ else
   falhou=$((falhou+1)); echo "  FALHA VR1: esperava vigia, causa, 'recorrente x2 em 30 dias, desde' e RESOLVIDO, veio: $VR_OUT"
 fi
 
+echo "== #608 D2: clone raso =="
+# Clone raso (`git clone --depth 1`): `.git/shallow` existe e o historico para no
+# commit de fronteira. Num clone assim a raiz do clone (`rev-list --max-parents=0`)
+# e a fronteira, nao a raiz do repo — e a checagem de parentesco concluia "sem
+# parentesco" com o clone em dia e mandava `reset --hard` (Issue #608). A fixture e
+# propria: repo com 3 commits; o clone raso sai do commit 3, e a fonte avanca depois
+# para o clone ficar atras de verdade.
+FR="$SBP/fonte-raso"
+CFGR="$SBP/cfg-raso"
+MR="$CFGR/plugins/marketplaces/fonte-raso"
+rm -rf "$FR" "$CFGR"
+mkdir -p "$FR/scripts/lib" "$FR/hooks/lib" "$FR/skills/exemplo" "$FR/.claude-plugin" "$CFGR/plugins/marketplaces" "$SBP/home-raso"
+cp "$SRC/scripts/saude.cjs" "$FR/scripts/saude.cjs"
+cp "$SRC/hooks/lib/resolver-executavel.cjs" "$FR/hooks/lib/"
+cp "$SRC/scripts/lib/impressao-falha.cjs" "$FR/scripts/lib/impressao-falha.cjs"
+echo "# skill de exemplo, so para skills/ nao ficar vazio" > "$FR/skills/exemplo/SKILL.md"
+printf '{"name":"fonte-raso","version":"1.0.0"}' > "$FR/.claude-plugin/plugin.json"
+git init -q "$FR"
+git -C "$FR" -c user.email=t@t -c user.name=t add -A >/dev/null 2>&1
+git -C "$FR" -c user.email=t@t -c user.name=t commit -qm "commit 1" >/dev/null 2>&1
+for i in 2 3; do
+  git -C "$FR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "commit $i" >/dev/null 2>&1
+done
+git clone -q --depth 1 "file://$FR" "$MR" 2>/dev/null
+if [ -f "$MR/.git/shallow" ]; then
+  ok=$((ok+1)); echo "  ok   fixture: o clone saiu raso (.git/shallow existe)"
+else
+  falhou=$((falhou+1)); echo "  FALHA fixture: o clone nao ficou raso — os casos abaixo nao medem a #608"
+fi
+
+# Saida INTEIRA do saude.cjs rodado a partir da fonte, com a config dir indicada.
+# Hermetico: CLAUDE_CONFIG_DIR declarado e home falsa, como nos outros cenarios.
+saude_raso() { # $1 = config dir a usar
+  ( cd "$FR" && CLAUDE_CONFIG_DIR="$1" HOME="$SBP/home-raso" USERPROFILE="$SBP/home-raso" RFM_ROOT="$SBP/dados" \
+    node "$FR/scripts/saude.cjs" 2>&1 )
+}
+confere() { # $1 = nome, $2 = exit do teste, $3 = saida mostrada se falhou
+  if [ "$2" -eq 0 ]; then ok=$((ok+1)); echo "  ok   $1"
+  else falhou=$((falhou+1)); echo "  FALHA $1"; echo "       veio: $3"; fi
+}
+
+# Caso 1: clone raso no MESMO commit da fonte.
+S1="$(saude_raso "$CFGR")"
+echo "$S1" | grep -qF "ALERTA  plugin instalado"; a=$?
+[ $a -ne 0 ]; confere "#608-1. clone raso em dia nao acusa sem parentesco" "$?" "$(echo "$S1" | grep 'plugin instalado')"
+
+# Caso 2: a fonte avanca um commit; o clone raso fica 1 atras.
+git -C "$FR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "commit 4" >/dev/null 2>&1
+S2="$(saude_raso "$CFGR")"
+L2="$(echo "$S2" | grep 'plugin instalado:')"
+echo "$L2" | grep -q "^  aviso "; a=$?
+echo "$L2" | grep -qF "1 commit(s) atras"; b=$?
+echo "$L2" | grep -qF "sem parentesco"; c=$?
+[ $a -eq 0 ] && [ $b -eq 0 ] && [ $c -ne 0 ]; confere "#608-2. clone raso 1 commit atras vira aviso com '1 commit(s) atras', sem 'sem parentesco'" "$?" "$L2"
+
+# Caso 3: o clone raso ganha um commit proprio; o HEAD dele nao existe na fonte.
+git -C "$MR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "commit proprio no clone" >/dev/null 2>&1
+S3="$(saude_raso "$CFGR")"
+L3="$(echo "$S3" | grep 'plugin instalado:')"
+echo "$L3" | grep -q "^  aviso "; a=$?
+echo "$S3" | grep -qF "clone e raso"; b=$?
+echo "$S3" | grep -qF "reset --hard"; c=$?
+[ $a -eq 0 ] && [ $b -eq 0 ] && [ $c -ne 0 ]; confere "#608-3. clone raso com HEAD que a fonte nao tem vira aviso 'clone e raso', sem 'reset --hard' na saida inteira" "$?" "$L3"
+
+# Caso 4 (vizinho que continua ALERTA): clone COMPLETO com historia reescrita, raiz
+# diferente. Mesma montagem do cenario B acima; aqui tambem se confere o `reset --hard`
+# da acao, que o cenario B nao checava.
+CFG4="$SBP/cfg-raso-reescrito"
+M4="$CFG4/plugins/marketplaces/fonte-raso"
+mkdir -p "$M4"
+git init -q "$M4"
+git -C "$M4" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "historia reescrita" >/dev/null 2>&1
+S4="$(saude_raso "$CFG4")"
+echo "$S4" | grep -qF "ALERTA  plugin instalado"; a=$?
+echo "$S4" | grep -qF "sem parentesco"; b=$?
+echo "$S4" | grep -qF "reset --hard"; c=$?
+[ $a -eq 0 ] && [ $b -eq 0 ] && [ $c -eq 0 ]; confere "#608-4. clone completo com historia reescrita continua ALERTA 'sem parentesco' com 'reset --hard'" "$?" "$(echo "$S4" | grep 'plugin instalado')"
+
+# Caso 5: o clone raso do caso 3 (commit proprio) E uma skill nova na fonte que o
+# clone nao tem. O aviso de raso nao pode esconder o ALERTA de skill faltando.
+mkdir -p "$FR/skills/nova"; echo "# skill nova" > "$FR/skills/nova/SKILL.md"
+git -C "$FR" -c user.email=t@t -c user.name=t add -A >/dev/null 2>&1
+git -C "$FR" -c user.email=t@t -c user.name=t commit -qm "skill nova" >/dev/null 2>&1
+S5="$(saude_raso "$CFGR")"
+L5="$(echo "$S5" | grep 'plugin instalado:')"
+echo "$L5" | grep -qF "ALERTA  plugin instalado"; a=$?
+echo "$L5" | grep -qF "carregado sem 1 skill(s): nova"; b=$?
+echo "$S5" | grep -qF "reset --hard"; c=$?
+[ $a -eq 0 ] && [ $b -eq 0 ] && [ $c -ne 0 ]; confere "#608-5. clone raso com commit proprio e skill faltando continua ALERTA 'carregado sem', sem 'reset --hard'" "$?" "$L5"
+
+# Caso 6: a FONTE e rasa (checkout de CI) e o clone e completo, 1 commit a frente.
+# A raiz daqui e a fronteira: sem a troca de pergunta, saia "sem parentesco".
+FS="$SBP/fonte-rasa-aqui"
+CFG6="$SBP/cfg-fonte-rasa"
+M6="$CFG6/plugins/marketplaces/fonte-raso"
+rm -rf "$FS" "$CFG6"; mkdir -p "$CFG6/plugins/marketplaces"
+git clone -q --depth 1 "file://$FR" "$FS" 2>/dev/null
+git clone -q "file://$FR" "$M6" 2>/dev/null
+git -C "$M6" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "commit proprio no clone completo" >/dev/null 2>&1
+if [ -f "$FS/.git/shallow" ] && [ ! -f "$M6/.git/shallow" ]; then
+  S6="$( cd "$FS" && CLAUDE_CONFIG_DIR="$CFG6" HOME="$SBP/home-raso" USERPROFILE="$SBP/home-raso" RFM_ROOT="$SBP/dados" \
+    node "$FS/scripts/saude.cjs" 2>&1 )"
+  L6="$(echo "$S6" | grep 'plugin instalado:')"
+  echo "$L6" | grep -q "^  aviso "; a=$?
+  echo "$L6" | grep -qF "este repositorio e raso"; b=$?
+  echo "$S6" | grep -qE "sem parentesco|reset --hard"; c=$?
+  [ $a -eq 0 ] && [ $b -eq 0 ] && [ $c -ne 0 ]; confere "#608-6. fonte rasa e clone completo a frente vira aviso 'este repositorio e raso', sem 'sem parentesco' nem 'reset --hard'" "$?" "$L6"
+else
+  falhou=$((falhou+1)); echo "  FALHA fixture #608-6: a fonte nao saiu rasa ou o clone saiu raso"
+fi
+rm -rf "$FR" "$CFGR" "$CFG4" "$FS" "$CFG6"
+
+echo "== #608 D3: config dirs ignoradas =="
+# Sandbox de bench (`.claude-bench-*`) e conta aposentada (`.claude-*.aposentada`) tem
+# `settings.json` e `plugins/` do harness. Antes da D3 a varredura da home as pegava e
+# comparava com a conta real: ALERTA de autocompact e avisos de skill e versao falsos.
+# HOME falsa, como nos outros cenarios; a config do usuario vem de RFM_ROOT.
+HOMED3="$SBP/home-d3"
+DADOS_D3="$SBP/dados-d3"
+OVR45='{"env":{"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE":"45"}}'
+mkdir -p "$DADOS_D3"
+printf '{"poda": false}' > "$DADOS_D3/config.json"
+
+conta_d3() { # $1 = nome da config dir, $2 = settings.json (texto)
+  mkdir -p "$HOMED3/$1/plugins"
+  printf '%s' "$2" > "$HOMED3/$1/settings.json"
+}
+registro_d3() { # $1 = nome da config dir, $2 = versao registrada, $3 = sha
+  mkdir -p "$HOMED3/$1/plugins"
+  printf '{"version":2,"plugins":{"rainforest-mind@rainforest-mind":[{"scope":"user","installPath":"%s","version":"%s","gitCommitSha":"%s"}]}}' \
+    "$HOMED3/$1/plugins/cache/rainforest-mind/$2" "$2" "$3" > "$HOMED3/$1/plugins/installed_plugins.json"
+}
+cenario_bench_d3() { # .claude=45; bench sem override; aposentada=45 em outra versao
+  rm -rf "$HOMED3"; mkdir -p "$HOMED3"
+  conta_d3 ".claude" "$OVR45"
+  registro_d3 ".claude" "0.70.0" "df1b135aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  mkdir -p "$HOMED3/.claude/skills/x"; printf 'aaa' > "$HOMED3/.claude/skills/x/SKILL.md"
+  conta_d3 ".claude-bench-rf" '{"model":"haiku"}'
+  conta_d3 ".claude-personal.aposentada" "$OVR45"
+  registro_d3 ".claude-personal.aposentada" "0.71.0" "1369ca5bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  mkdir -p "$HOMED3/.claude-personal.aposentada/skills/x"; printf 'bbbbbb' > "$HOMED3/.claude-personal.aposentada/skills/x/SKILL.md"
+}
+saude_d3() { # $1 = RFM_ROOT (config do usuario); saida INTEIRA do saude.cjs contra a HOME falsa
+  ( cd "$SRC" && CLAUDE_CONFIG_DIR= USERPROFILE="$HOMED3" HOME="$HOMED3" RFM_ROOT="$1" \
+    node "$SRC/scripts/saude.cjs" 2>&1 )
+}
+
+# Caso 1: bench e aposentada nao entram na comparacao, nem em autocompact nem em avisos.
+cenario_bench_d3
+S1="$(saude_d3 "$DADOS_D3")"
+echo "$S1" | grep -qF "ALERTA  autocompact"; a=$?
+echo "$S1" | grep -E '^  aviso (config dirs|skills-divergentes)' | grep -qE '\.claude-bench-rf|\.claude-personal\.aposentada'; b=$?
+echo "$S1" | grep 'plugin instalado' | grep -qE '\.claude-bench-rf|\.claude-personal\.aposentada'; c=$?
+[ $a -ne 0 ] && [ $b -ne 0 ] && [ $c -ne 0 ]; confere "D3-1. bench sem override nao gera ALERTA de autocompact, e plugin instalado nao cita as ignoradas" "$?" "$(echo "$S1" | grep -E 'autocompact|config dirs|skills-divergentes|plugin instalado')"
+
+# Caso 2 (vizinho que continua ALERTA): .claude=45 contra .claude-personal=50.
+rm -rf "$HOMED3"; mkdir -p "$HOMED3"
+conta_d3 ".claude" "$OVR45"
+conta_d3 ".claude-personal" '{"env":{"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE":"50"}}'
+S2="$(saude_d3 "$DADOS_D3")"
+echo "$S2" | grep -qF "ALERTA  autocompact"; a=$?
+[ $a -eq 0 ]; confere "D3-2. .claude=45 + .claude-personal=50 continua ALERTA de autocompact" "$?" "$(echo "$S2" | grep 'autocompact')"
+
+# Caso 3 (vizinho que continua ALERTA): .claude-personal SEM override contra .claude=45.
+rm -rf "$HOMED3"; mkdir -p "$HOMED3"
+conta_d3 ".claude" "$OVR45"
+conta_d3 ".claude-personal" '{"model":"haiku"}'
+S3="$(saude_d3 "$DADOS_D3")"
+echo "$S3" | grep -qF "ALERTA  autocompact"; a=$?
+[ $a -eq 0 ]; confere "D3-3. .claude=45 + .claude-personal sem override continua ALERTA de autocompact" "$?" "$(echo "$S3" | grep 'autocompact')"
+
+# Caso 4: a chave na config do usuario com [] diz "nao ignore nenhuma": a bench volta a entrar.
+printf '{"poda": false, "saude-ignorar-config-dirs": []}' > "$DADOS_D3/config.json"
+cenario_bench_d3
+S4="$(saude_d3 "$DADOS_D3")"
+echo "$S4" | grep -qF "ALERTA  autocompact"; a=$?
+echo "$S4" | grep 'plugin instalado' | grep -qF '.claude-personal.aposentada'; b=$?
+[ $a -eq 0 ] && [ $b -eq 0 ]; confere "D3-4. com saude-ignorar-config-dirs [] a bench volta, o ALERTA de autocompact reaparece e plugin instalado cita a aposentada" "$?" "$(echo "$S4" | grep -E 'autocompact|plugin instalado')"
+
+# Caso 5: o `.` de `*.aposentada` e literal — `.claude-personalXaposentada` e conta.
+printf '{"poda": false}' > "$DADOS_D3/config.json"
+rm -rf "$HOMED3"; mkdir -p "$HOMED3"
+conta_d3 ".claude" "$OVR45"
+conta_d3 ".claude-personalXaposentada" '{"env":{"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE":"50"}}'
+S5="$(saude_d3 "$DADOS_D3")"
+echo "$S5" | grep -qF "ALERTA  autocompact"; a=$?
+[ $a -eq 0 ]; confere "D3-5. .claude-personalXaposentada nao casa *.aposentada e continua ALERTA de autocompact" "$?" "$(echo "$S5" | grep 'autocompact')"
+
+# Caso 6: o padrao nao diferencia caixa — `.claude-BENCH-x` e sandbox.
+rm -rf "$HOMED3"; mkdir -p "$HOMED3"
+conta_d3 ".claude" "$OVR45"
+conta_d3 ".claude-BENCH-x" '{"model":"haiku"}'
+S6="$(saude_d3 "$DADOS_D3")"
+echo "$S6" | grep -qF "ALERTA  autocompact"; a=$?
+[ $a -ne 0 ]; confere "D3-6. .claude-BENCH-x casa *bench* sem diferenciar caixa e nao gera ALERTA" "$?" "$(echo "$S6" | grep 'autocompact')"
+
+rm -rf "$HOMED3" "$DADOS_D3"
+
 # Limpeza
 rm -rf "$R1_TEST" "$R2_TEST" "$R3_TEST"
 

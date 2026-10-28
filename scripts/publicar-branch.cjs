@@ -24,16 +24,20 @@
  *   5   CI não verde (esperar-ci)
  *   6   merge não confirmado: state fechado sem merge, ou prazo esgotado (confirmar-merge)
  *   7   CI verde mas `fechar-mergear` desligada: merge não autorizado (esperar-ci)
- *   8   repositório sem CI: zero workflows e o PR sem check; a evidência é o
- *       `verificar` (esperar-ci, #576). A linha diz se o merge está autorizado
+ *   8   repositório sem CI de PR: nenhum workflow do checkout alcança o PR e o PR
+ *       não tem check; a evidência é o `verificar` (esperar-ci, #576, #591). A linha diz se o merge está autorizado
  *   69  ambiente: git/gh ausente ou sem auth, falha de rede, remoto não GitHub onde
- *       o subcomando precisa dele, ou saída inesperada do gh
+ *       o subcomando precisa dele, ou saída inesperada do gh. No esperar-ci, também
+ *       a espera interrompida sem check vermelho, e a releitura dos checks que falha
+ *       (stderr começa por `nao-verificavel:`) (#587)
  *
  * `RFM_MERGE_PRAZO_S` (padrão 60) limita a espera do state em confirmar-merge.
  */
 'use strict';
 
 const { spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 const { caminhoExecutavel, executar } = require('../hooks/lib/resolver-executavel.cjs');
 const { resolverConfig } = require('../hooks/lib/config.cjs');
 
@@ -187,6 +191,86 @@ function mergeAutorizado() {
   }
 }
 
+// #591 (D5): um workflow alcança o PR se o texto cita `pull_request` (inclui
+// `pull_request_target`) ou tem gatilho `push` que pode disparar na branch do PR.
+// Leitura textual conservadora: na dúvida o workflow conta, e o caso cai no 5.
+// `push` só deixa de contar com filtro `branches:` de nomes fixos DENTRO do bloco
+// `push:` — `branches:` de `workflow_run`, de um `with:` ou de comentário não filtra
+// o push. `branches-ignore` dispara em toda branch não listada, e glob no valor de
+// `branches:` (`["**"]`, `fluxo/?`, `[a-z]`) também: os dois contam como PR, nunca
+// viram 8. Forma de fluxo (`on: push`, `on: [push]`, `push: {...}`) também conta.
+function alcancaPr(texto) {
+  if (/\bpull_request/.test(texto)) return true;
+  if (!/\bpush\b/.test(texto)) return false;
+  return !pushSoEmNomesFixos(texto);
+}
+
+// O push é filtrado só quando o gatilho é legível na forma exata: `on:` de topo
+// em bloco, e todo filho direto dele que cita push é `push:` sozinho na linha com
+// `branches:` de nomes fixos (sem glob no valor) e sem `branches-ignore` no próprio
+// bloco; o `*` de `paths:` não é filtro de branch e não conta. Qualquer outra forma
+// (`on: push`, `on: [push]`, `- push`, `push: {}`) dispara em toda branch ou não
+// é legível, e um `push:` de `with:`/`env:` nem é filho de `on:`: false, conta.
+// Comentário de fim de linha sai antes da leitura.
+function pushSoEmNomesFixos(texto) {
+  const linhas = texto.split(/\r?\n/).map((l) => l.replace(/\s#.*$/, ''));
+  const recuo = (l) => l.match(/^\s*/)[0].length;
+  const util = (l) => l.trim() && !/^\s*#/.test(l);
+  const iOn = linhas.findIndex((l) => /^["']?on["']?\s*:\s*$/.test(l));
+  if (iOn === -1) return false;
+  const filhos = [];
+  let recuoFilho = null;
+  for (let i = iOn + 1; i < linhas.length && !(util(linhas[i]) && recuo(linhas[i]) === 0); i++) {
+    if (!util(linhas[i])) continue;
+    if (recuoFilho === null) recuoFilho = recuo(linhas[i]);
+    if (recuo(linhas[i]) === recuoFilho) filhos.push(i);
+  }
+  const pushes = filhos.filter((i) => /\bpush\b/.test(linhas[i]));
+  if (!pushes.length) return false;
+  return pushes.every((i) => {
+    if (!/^\s*["']?push["']?\s*:\s*$/.test(linhas[i])) return false;
+    const bloco = [];
+    for (const l of linhas.slice(i + 1)) {
+      if (!util(l)) continue;
+      if (recuo(l) <= recuo(linhas[i])) break;
+      bloco.push(l);
+    }
+    const b = bloco.join('\n');
+    if (!/\bbranches\s*:/.test(b) || /\bbranches-ignore\s*:/.test(b)) return false;
+    // Glob de branch do GitHub: `*`, `?`, `+` e `[...]`, procurados só no valor de
+    // `branches:`. O `[` que abre a lista em fluxo (`[main]`) não conta; os itens
+    // em bloco vêm nas linhas seguintes, mais recuadas ou no mesmo recuo com `-`.
+    const iB = bloco.findIndex((l) => /\bbranches\s*:/.test(l));
+    const valor = [bloco[iB].replace(/^.*?\bbranches\s*:\s*\[?/, '')];
+    for (const l of bloco.slice(iB + 1)) {
+      if (recuo(l) < recuo(bloco[iB]) || (recuo(l) === recuo(bloco[iB]) && !/^\s*-/.test(l))) break;
+      valor.push(l);
+    }
+    return !/[*?+[]/.test(valor.join('\n'));
+  });
+}
+
+// Quantos workflows do checkout (`git ls-files`) alcançam PR. Devolve null quando
+// não dá para ler (git falhou, arquivo listado ilegível): desconhecido não vira 8.
+function workflowsDePr(raiz) {
+  const ls = spawnSync(caminhoExecutavel('git'), ['ls-files', '.github/workflows'], {
+    cwd: raiz,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  if (ls.status !== 0) return null;
+  const arquivos = (ls.stdout || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => /\.ya?ml$/.test(l));
+  let quantos = 0;
+  try {
+    for (const arq of arquivos) {
+      if (alcancaPr(fs.readFileSync(path.join(raiz, arq), 'utf8'))) quantos++;
+    }
+  } catch {
+    return null;
+  }
+  return quantos;
+}
+
 function esperarCi(pr) {
   const sem = exigirGithub();
   if (sem !== 0) return sem;
@@ -197,13 +281,12 @@ function esperarCi(pr) {
     return 69;
   }
 
-  // Repositório sem workflow nenhum (#576): "no checks reported" ali não é CI
-  // vermelho, é CI ausente, e a evidência é o `verificar`. Só vale com a API
-  // dizendo zero workflows E o PR sem check; leitura que falha segue o caminho
-  // de sempre, onde ausência de check é não verde.
-  const wf = executar('gh', ['api', 'repos/{owner}/{repo}/actions/workflows', '--jq', '.total_count']);
-  const semWorkflows = wf.status === 0 && (wf.stdout || '').trim() === '0';
-  if (semWorkflows) {
+  // Repositório sem CI de PR (#576, #591): "no checks reported" ali não é CI
+  // vermelho, é CI ausente, e a evidência é o `verificar`. Só vale com os
+  // workflows do checkout dizendo zero que alcançam PR E o PR sem check; leitura
+  // que falha (null) segue o caminho de sempre, onde ausência de check é não verde.
+  const semCiDePr = workflowsDePr(toplevel()) === 0;
+  if (semCiDePr) {
     const lidosSem = executar('gh', ['pr', 'checks', String(pr), '--json', 'name,bucket']);
     let semChecks = false;
     try {
@@ -212,17 +295,44 @@ function esperarCi(pr) {
     } catch {
       semChecks = /no checks reported/i.test(`${lidosSem.stdout || ''}${lidosSem.stderr || ''}`);
     }
-    if (semWorkflows && semChecks) {
+    if (semCiDePr && semChecks) {
       const quem = mergeAutorizado()
         ? `merge autorizado — rode gh pr merge ${pr} --squash`
         : 'fechar-mergear desligada — pare no PR aberto';
-      process.stdout.write(`repositório sem CI (zero workflows, PR ${pr} sem check): a evidência é o verificar; ${quem}\n`);
+      process.stdout.write(`repositório sem CI de PR (nenhum workflow alcança PR, PR ${pr} sem check): a evidência é o verificar; ${quem}\n`);
       return 8;
     }
   }
 
   const checks = executar('gh', ['pr', 'checks', String(pr), '--watch', '--interval', '20'], { stdio: 'inherit' });
   if (checks.status !== 0) {
+    // #587 (D4): o --watch saiu ≠ 0 e o stderr dele não chega aqui (stdio inherit).
+    // A decisão é pelo estado relido, não pelo texto do erro: fail/cancel → 5;
+    // leitura ilegível ou espera interrompida (pending/pass) → 69 nao-verificavel.
+    const relido = executar('gh', ['pr', 'checks', String(pr), '--json', 'name,bucket']);
+    let relidos;
+    try {
+      relidos = JSON.parse(relido.stdout);
+      if (!Array.isArray(relidos)) throw new Error('nao e lista');
+    } catch {
+      // O gh real, com o PR sem check, sai 1 com stdout vazio e "no checks
+      // reported" no stderr — não devolve `[]`. Isso é CI que não reportou: 5.
+      if (/no checks reported/i.test(`${relido.stdout || ''}${relido.stderr || ''}`)) {
+        erro(`CI não verde no PR ${pr} (gh pr checks saiu ${checks.status}; "no checks reported" conta como não verde)`);
+        return 5;
+      }
+      erro(`nao-verificavel: CI do PR ${pr} não pôde ser lido (gh pr checks saiu ${checks.status}; releitura sem JSON)`, relido.stderr);
+      return 69;
+    }
+    const falhos = relidos.filter((c) => c.bucket === 'fail' || c.bucket === 'cancel');
+    if (falhos.length) {
+      erro(`CI não verde no PR ${pr} (gh pr checks saiu ${checks.status}): ${falhos.map((c) => `${c.name} (${c.bucket})`).join(', ')}`);
+      return 5;
+    }
+    if (!falhos.length && relidos.length) {
+      erro(`nao-verificavel: espera do CI do PR ${pr} interrompida (gh pr checks saiu ${checks.status}); nenhum check falhou, mas nem todos concluíram`);
+      return 69;
+    }
     erro(`CI não verde no PR ${pr} (gh pr checks saiu ${checks.status}; "no checks reported" conta como não verde)`);
     return 5;
   }

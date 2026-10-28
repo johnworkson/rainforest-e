@@ -61,15 +61,14 @@ if (args[0] === 'pr' && args[1] === 'list') {
   process.exit(0);
 }
 if (args[0] === 'pr' && args[1] === 'checks' && args.includes('--json')) {
+  if (process.env.STUB_CHECKS_JSON_EXIT !== undefined) {
+    if (process.env.STUB_CHECKS_JSON_STDERR) process.stderr.write(process.env.STUB_CHECKS_JSON_STDERR + '\n');
+    process.exit(Number(process.env.STUB_CHECKS_JSON_EXIT));
+  }
   process.stdout.write((process.env.STUB_CHECKS_JSON || '[{"name":"baterias","bucket":"pass"}]') + '\n');
   process.exit(0);
 }
 if (args[0] === 'pr' && args[1] === 'checks') process.exit(Number(process.env.STUB_CHECKS_EXIT || 0));
-if (args[0] === 'api' && String(args[1]).includes('actions/workflows')) {
-  if (process.env.STUB_API_FAIL) { process.stderr.write('HTTP 502\n'); process.exit(1); }
-  process.stdout.write((process.env.STUB_WORKFLOWS === undefined ? '1' : process.env.STUB_WORKFLOWS) + '\n');
-  process.exit(0);
-}
 if (args[0] === 'pr' && args[1] === 'view') {
   process.stdout.write(JSON.stringify({ state: process.env.STUB_STATE || 'OPEN' }) + '\n');
   process.exit(0);
@@ -211,6 +210,14 @@ caixa_git remote set-url origin https://github.com/caixa/repo.git
 # ============================================================ (g) esperar-ci
 echo "== (g) esperar-ci --pr 7"
 export STUB_LOG="$S/log-g.txt"
+# Os workflows entram no indice (git add), que e o que o `git ls-files` le. Ate o
+# (g11) a caixa tem um workflow de PR, como a caixa antiga tinha um workflow (count 1):
+# g1-g10 e g16-g18 testam o esperar-ci com CI de PR presente. caixa_limpa tira tudo antes de g11.
+workflow() { mkdir -p "$CAIXA/.github/workflows" && cat > "$CAIXA/.github/workflows/$1" && caixa_git add .github/workflows; }
+caixa_limpa() { caixa_git rm -r -q --cached --ignore-unmatch .github >/dev/null 2>&1; rm -rf "$CAIXA/.github"; }
+workflow ci.yml <<'YML'
+on: pull_request
+YML
 mkdir -p "$CAIXA/.rainforest"
 printf '{"fechar-mergear": true}\n' > "$CAIXA/.rainforest/config.json"
 export STUB_CHECKS_EXIT=0
@@ -231,10 +238,28 @@ roda "$CAIXA" esperar-ci --pr 7
 [ "$CODIGO" -eq 7 ]; afirma "(g4) CI verde + config ilegivel: sai 7 (exit=$CODIGO)" $?
 
 printf '{"fechar-mergear": true}\n' > "$CAIXA/.rainforest/config.json"
-export STUB_CHECKS_EXIT=1
+export STUB_CHECKS_EXIT=1 STUB_CHECKS_JSON='[{"name":"a","bucket":"fail"}]'
 roda "$CAIXA" esperar-ci --pr 7
 [ "$CODIGO" -eq 5 ]; afirma "(g5) CI vermelho: sai 5 (exit=$CODIGO)" $?
+grep -q "a (fail)" "$ERRO"; afirma "(g5) stderr nomeia a (fail)" $?
+
+# #587 (D4): --watch saiu 1 e o relido decide. Relido sem estado legivel = 69, nao 5.
+export STUB_CHECKS_JSON_EXIT=1 STUB_CHECKS_JSON_STDERR='error connecting to api.github.com'
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 69 ]; afirma "(g16) watch 1 e releitura sem rede: sai 69 (exit=$CODIGO)" $?
+head -n 1 "$ERRO" | grep -q '^nao-verificavel:'; afirma "(g16) primeira linha do stderr comeca por nao-verificavel:" $?
+unset STUB_CHECKS_JSON_EXIT STUB_CHECKS_JSON_STDERR
+
+export STUB_CHECKS_JSON='[{"name":"a","bucket":"pending"}]'
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 69 ]; afirma "(g18) watch cai com checks pending: sai 69 (exit=$CODIGO)" $?
+head -n 1 "$ERRO" | grep -q '^nao-verificavel:'; afirma "(g18) primeira linha do stderr comeca por nao-verificavel:" $?
+
+export STUB_CHECKS_JSON='[]'
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g17) watch cai com lista vazia: sai 5 (exit=$CODIGO)" $?
 export STUB_CHECKS_EXIT=0
+unset STUB_CHECKS_JSON
 
 # gh 2.96 sai 0 do --watch com um check CANCELLED (PR #537): o bucket decide.
 export STUB_CHECKS_JSON='[{"name":"shard 1/2","bucket":"cancel"},{"name":"shard 2/2","bucket":"pass"}]'
@@ -256,28 +281,261 @@ roda "$CAIXA" esperar-ci --pr 7
 [ "$CODIGO" -eq 5 ]; afirma "(g10) JSON ilegivel: sai 5 (exit=$CODIGO)" $?
 unset STUB_CHECKS_JSON
 
-# #576: repositorio sem workflow nenhum e PR sem check e CI ausente, nao vermelho.
-export STUB_WORKFLOWS=0 STUB_CHECKS_JSON='[]' STUB_CHECKS_EXIT=1
+# #576 e #591: 8 so quando nenhum workflow DO CHECKOUT alcanca PR e o PR nao tem
+# check. Os casos seguintes tiram os workflows da caixa (caixa_limpa) e os põem de
+# novo quando precisam; nada vaza entre eles.
+caixa_limpa
+export STUB_CHECKS_JSON='[]' STUB_CHECKS_EXIT=1
+
 roda "$CAIXA" esperar-ci --pr 7
-[ "$CODIGO" -eq 8 ]; afirma "(g11) zero workflows e PR sem check: sai 8 (exit=$CODIGO)" $?
-grep -q "repositório sem CI" "$SAIDA"; afirma "(g11) stdout diz repositorio sem CI" $?
+[ "$CODIGO" -eq 8 ]; afirma "(g11) sem .github/workflows e PR sem check: sai 8 (exit=$CODIGO)" $?
+grep -q "repositório sem CI de PR" "$SAIDA"; afirma "(g11) stdout diz repositorio sem CI de PR" $?
 grep -q "merge autorizado" "$SAIDA"; afirma "(g11) com fechar-mergear ligada, diz merge autorizado" $?
 printf '{"fechar-mergear": false}\n' > "$CAIXA/.rainforest/config.json"
 roda "$CAIXA" esperar-ci --pr 7
 [ "$CODIGO" -eq 8 ]; afirma "(g12) sem CI e chave desligada: sai 8 (exit=$CODIGO)" $?
 grep -q "pare no PR aberto" "$SAIDA"; afirma "(g12) diz pare no PR aberto" $?
 printf '{"fechar-mergear": true}\n' > "$CAIXA/.rainforest/config.json"
-export STUB_WORKFLOWS=2
+
+# (g13) workflow so de push, sem filtro de branch, alcanca o PR: o CI existe e nao reportou.
+workflow ci.yml <<'YML'
+on: [push]
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
+YML
 roda "$CAIXA" esperar-ci --pr 7
-[ "$CODIGO" -eq 5 ]; afirma "(g13) com workflow e PR sem check: segue 5 (exit=$CODIGO)" $?
-export STUB_WORKFLOWS=0 STUB_API_FAIL=1
+[ "$CODIGO" -eq 5 ]; afirma "(g13) workflow com push sem branches e PR sem check: segue 5 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g14) workflow listado no indice mas ilegivel no disco: leitura que falha nao vira 8.
+workflow ci.yml <<'YML'
+on: pull_request
+YML
+rm -f "$CAIXA/.github/workflows/ci.yml"
 roda "$CAIXA" esperar-ci --pr 7
-[ "$CODIGO" -eq 5 ]; afirma "(g14) API que falha nao vira 8: sai 5 (exit=$CODIGO)" $?
-unset STUB_API_FAIL
+[ "$CODIGO" -eq 5 ]; afirma "(g14) workflow listado e ilegivel: sai 5, nao 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g15) workflow de PR e PR com check verde: segue 0.
+workflow ci.yml <<'YML'
+on: pull_request
+YML
 export STUB_CHECKS_JSON='[{"name":"externo","bucket":"pass"}]' STUB_CHECKS_EXIT=0
 roda "$CAIXA" esperar-ci --pr 7
-[ "$CODIGO" -eq 0 ]; afirma "(g15) zero workflows mas PR com check verde: segue 0 (exit=$CODIGO)" $?
-unset STUB_WORKFLOWS STUB_CHECKS_JSON STUB_CHECKS_EXIT
+[ "$CODIGO" -eq 0 ]; afirma "(g15) workflow de PR e check verde: segue 0 (exit=$CODIGO)" $?
+export STUB_CHECKS_JSON='[]' STUB_CHECKS_EXIT=1
+caixa_limpa
+
+# (g19) workflow com pull_request e PR sem check: sai 5 (o CI de PR existe e nao reportou).
+workflow ci.yml <<'YML'
+on: pull_request
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g19) workflow com pull_request e PR sem check: sai 5 (exit=$CODIGO)" $?
+
+# (g25) o mesmo com o formato do gh real (2.96): PR sem check faz a releitura sair 1,
+# stdout vazio, "no checks reported" no stderr. Nao e rede caida: sai 5, nao 69.
+export STUB_CHECKS_JSON_EXIT=1 STUB_CHECKS_JSON_STDERR="no checks reported on the 'x' branch"
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g25) pull_request e PR sem check no formato do gh real: sai 5, nao 69 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g26) sem workflow e PR sem check no formato do gh real: continua 8.
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 8 ]; afirma "(g26) sem .github/workflows e PR sem check no formato do gh real: sai 8 (exit=$CODIGO)" $?
+unset STUB_CHECKS_JSON_EXIT STUB_CHECKS_JSON_STDERR
+
+# (g20) protect-main.yml com o conteudo real da #591 (push em main): nenhum workflow alcanca PR: sai 8.
+workflow protect-main.yml <<'YML'
+on:
+  push:
+    branches: [main]
+jobs:
+  protect:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo protect
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 8 ]; afirma "(g20) so protect-main (push em main) e PR sem check: sai 8 (exit=$CODIGO)" $?
+
+# (g21) protect-main.yml mais um workflow so de schedule: continua sem CI de PR: sai 8.
+workflow schedule.yml <<'YML'
+on:
+  schedule:
+    - cron: '0 6 * * *'
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo nightly
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 8 ]; afirma "(g21) protect-main e schedule, PR sem check: sai 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g23) push com branches-ignore dispara na branch do PR: o CI existe e nao reportou, segue 5.
+workflow ci.yml <<'YML'
+on:
+  push:
+    branches-ignore: [main]
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g23) push com branches-ignore e PR sem check: sai 5, nao 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g24) push com glob de branch ("**") dispara na branch do PR: segue 5.
+workflow ci.yml <<'YML'
+on:
+  push:
+    branches: ["**"]
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g24) push com branches glob e PR sem check: sai 5, nao 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g27) push sem filtro e `branches:` de outro gatilho (workflow_run) e de um step:
+# o filtro nao e do push, o push dispara na branch do PR: segue 5, nao 8.
+workflow ci.yml <<'YML'
+on:
+  push:
+  workflow_run:
+    workflows: [build]
+    branches: [main]
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: x/y@v1
+        with:
+          branches: main
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g27) push sem filtro e branches: de workflow_run/with: sai 5, nao 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g28) protect-main com comentario e cron no mesmo arquivo: o filtro do push e de
+# nomes fixos, o * do cron e o comentario nao contam: sai 8.
+workflow protect-main.yml <<'YML'
+on:
+  # so na main
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * *'
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 8 ]; afirma "(g28) push em main com cron no mesmo arquivo: sai 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g29) on: push inline dispara em toda branch; um push: com branches: dentro de
+# with: nao e o gatilho: segue 5, nao 8.
+workflow ci.yml <<'YML'
+on: push
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: x/y@v1
+        with:
+          push:
+            branches: [main]
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g29) on: push inline e push: de with: com branches: sai 5, nao 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g30) push: so com paths e um comentario de fim de linha citando branches:
+# o comentario nao filtra: segue 5, nao 8.
+workflow ci.yml <<'YML'
+on:
+  push:
+    paths: [src]  # branches: [main] fica pra depois
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g30) comentario de fim de linha com branches: nao filtra o push: sai 5 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g31) on: em varias linhas com `- push` (lista) e um push: de with: filtrado em
+# main: o gatilho dispara em toda branch, o with: nao e filho de on:: sai 5, nao 8.
+workflow ci.yml <<'YML'
+on:
+  - push
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: x/y@v1
+        with:
+          push:
+            branches: [main]
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g31) on: com - push e push: de with: filtrado: sai 5, nao 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g32) o mesmo com `push: {}` como filho de on:: forma que nao e bloco, conta: sai 5.
+workflow ci.yml <<'YML'
+on:
+  push: {}
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: x/y@v1
+        with:
+          push:
+            branches: [main]
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g32) on: com push: {} e push: de with: filtrado: sai 5, nao 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g33) glob de branch sem `*` (`[a-z]`, em lista de bloco no mesmo recuo): o push
+# dispara na branch do PR: sai 5, nao 8.
+workflow ci.yml <<'YML'
+on:
+  push:
+    branches:
+    - main
+    - 'fluxo/[a-z]'
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g33) branches com glob [a-z] em lista de bloco: sai 5, nao 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g34) glob `?` em lista de fluxo: sai 5, nao 8.
+workflow ci.yml <<'YML'
+on:
+  push:
+    branches: [main, 'fluxo/?']
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 5 ]; afirma "(g34) branches com glob ? em lista de fluxo: sai 5, nao 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g35) nomes fixos em lista de bloco, com paths glob ao lado: o filtro de branch
+# e de nomes fixos, o * do paths nao e de branch: sai 8.
+workflow protect-main.yml <<'YML'
+on:
+  push:
+    branches:
+      - main
+      - release
+    paths: ['src/**']
+YML
+roda "$CAIXA" esperar-ci --pr 7
+[ "$CODIGO" -eq 8 ]; afirma "(g35) branches fixos em lista de bloco e paths glob: sai 8 (exit=$CODIGO)" $?
+caixa_limpa
+
+# (g22) cwd fora de repositorio git: o script para antes de ler workflow (main), nunca 8.
+mkdir -p "$S/fora"
+roda "$S/fora" esperar-ci --pr 7
+[ "$CODIGO" -eq 69 ]; afirma "(g22) cwd fora de repositorio git: sai 69, nunca 8 (exit=$CODIGO)" $?
+unset STUB_CHECKS_JSON STUB_CHECKS_EXIT
 
 roda_sem_gh "$CAIXA" esperar-ci --pr 7
 [ "$CODIGO" -eq 69 ]; afirma "(g6) gh ausente do PATH: sai 69 (exit=$CODIGO)" $?
