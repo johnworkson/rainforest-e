@@ -1,0 +1,224 @@
+{
+  "slug": "2026-10-29-colheita-coordenacao-e-gates",
+  "titulo": "Colheita: coordenacao entre sessoes na regra 6, criterio sobre arquivo compartilhado no plano e exemplos prescritos contra os gates",
+  "criado_em": "2026-10-29",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-29-colheita-coordenacao-e-gates.md",
+    "em": "2026-10-29"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-29-colheita-coordenacao-e-gates.md",
+    "tarefas": 5,
+    "paralelas": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "em": "2026-10-29"
+  },
+  "executar": {
+    "status": "ok",
+    "tarefas_ok": 5,
+    "tarefas": 5,
+    "em": "2026-10-29",
+    "catraca_mutacao": "2026-10-29",
+    "comando": "bash scripts/testa-teto-skills.sh; grep -n 'contagem global' skills/plano/SKILL.md",
+    "saida": "Resultado: 21 OK, 0 FALHA ; 188:  contagem global** ...",
+    "carimbos": [
+      {
+        "tarefa": 1,
+        "hash_base": "1ea3f0dfce90c55f343ca9e4d7759cc455955642",
+        "iteracao": 1,
+        "sessao": "4afb8320-f076-402f-8e7d-8f71f64b7cd2",
+        "ts": "2026-10-29T20:00:53.077Z"
+      },
+      {
+        "tarefa": 2,
+        "hash_base": "1ea3f0dfce90c55f343ca9e4d7759cc455955642",
+        "iteracao": 1,
+        "sessao": "4afb8320-f076-402f-8e7d-8f71f64b7cd2",
+        "ts": "2026-10-29T20:00:53.077Z"
+      },
+      {
+        "tarefa": 3,
+        "hash_base": "1ea3f0dfce90c55f343ca9e4d7759cc455955642",
+        "iteracao": 1,
+        "sessao": "4afb8320-f076-402f-8e7d-8f71f64b7cd2",
+        "ts": "2026-10-29T20:00:53.077Z"
+      },
+      {
+        "tarefa": 4,
+        "hash_base": "1ea3f0dfce90c55f343ca9e4d7759cc455955642",
+        "iteracao": 1,
+        "sessao": "4afb8320-f076-402f-8e7d-8f71f64b7cd2",
+        "ts": "2026-10-29T20:00:53.077Z"
+      },
+      {
+        "tarefa": 5,
+        "hash_base": "916cdc23eee406eccc36a5f745a57f575f0f3030",
+        "iteracao": 1,
+        "sessao": "4afb8320-f076-402f-8e7d-8f71f64b7cd2",
+        "ts": "2026-10-29T20:00:53.077Z"
+      },
+      {
+        "tarefa": 4,
+        "hash_base": "5b438e13faa8ee7c87e716346bc0ab59316d6648",
+        "iteracao": 2,
+        "sessao": "4afb8320-f076-402f-8e7d-8f71f64b7cd2",
+        "ts": "2026-10-29T20:30:03.596Z"
+      }
+    ],
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-estado.sh, caso carimbo com hash_base que nao e commit deste repositorio recusa (D4)"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-exemplos-prescritos.cjs, forma de skills/fechar/SKILL.md:198"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "n/a",
+        "motivo": "so texto de regra"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "n/a",
+        "motivo": "so texto de skill"
+      },
+      {
+        "tarefa": 5,
+        "resultado": "n/a",
+        "motivo": "so versao e changelog"
+      }
+    ]
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "a85165bb5d4855899503e7c3c80c7c8c6165e514",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a7b4683d9c491ac07",
+        "veredito": "ok",
+        "em": "2026-10-29",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/4afb8320-f076-402f-8e7d-8f71f64b7cd2/subagents/agent-a7b4683d9c491ac07.jsonl"
+      }
+    ],
+    "voltas": [
+      {
+        "volta": 1,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a8df4b4f505b7f265",
+            "veredito": "ok",
+            "em": "2026-10-29",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/4afb8320-f076-402f-8e7d-8f71f64b7cd2/subagents/agent-a8df4b4f505b7f265.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 2,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a3b1dfd77bb16b72b",
+            "veredito": "ok",
+            "em": "2026-10-29",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/4afb8320-f076-402f-8e7d-8f71f64b7cd2/subagents/agent-a3b1dfd77bb16b72b.jsonl"
+          }
+        ]
+      }
+    ],
+    "achados": 0,
+    "rodadas": 3,
+    "base": "816d5e6a3c7dc170324a7afbad5cd79e285aa48f",
+    "head": "a85165bb5d4855899503e7c3c80c7c8c6165e514",
+    "comando": "bash scripts/testa-teto-skills.sh",
+    "saida": "Resultado: 21 OK, 0 FALHA",
+    "em": "2026-10-29"
+  },
+  "verificar": {
+    "status": "ok",
+    "em": "2026-10-29",
+    "comando": "bash scripts/testa-estado.sh; node scripts/testa-exemplos-prescritos.cjs; bash scripts/testa-versao.sh",
+    "saida": "== resultado: 337 ok, 0 falhas == ; == exemplos prescritos: 11 formas, 9 ok, 2 excecao, 0 falha(s) == ; ok: 5 falhou: 0",
+    "sensor_externo": "bash scripts/testa-estado.sh",
+    "head": "75df5a7a296f397dbbed631c23e83151c18f4b06"
+  },
+  "fechar": {
+    "status": "pendente",
+    "em": "2026-10-29"
+  },
+  "decididos": [
+    {
+      "pergunta": "Prescricao do fechar barrada pela bateria nova: corrigir neste PR?",
+      "escolha": "Sim: passo 1 do fechar passa a gh pr create --title --body-file, ancora binaria re-medida",
+      "porque": "regra 6: mesma classe do D6 e cabe no PR; a bateria fica verde pela prescricao certa, nao por excecao",
+      "estagio": "executar",
+      "em": "2026-10-29T19:19:13.783Z"
+    },
+    {
+      "pergunta": "Excecoes da bateria: linhas 161-162 do setup",
+      "escolha": "gh issue close e gh pr merge --auto ficam na lista",
+      "porque": "a tabela do setup descreve o que cada gate barra; e anti-exemplo, nao prescricao",
+      "estagio": "executar",
+      "em": "2026-10-29T19:19:13.986Z"
+    },
+    {
+      "pergunta": "Nucleo da regra 6 coube nos tetos?",
+      "escolha": "Sim, reescrito com os mesmos 552 bytes (sai a frase-modelo do plantio e o 'nao escolha')",
+      "porque": "o contrato do nucleo e de 5922 B exatos; crescer 36 B cortava a secao de dependencias da abertura",
+      "estagio": "executar",
+      "em": "2026-10-29T19:19:14.206Z"
+    },
+    {
+      "pergunta": "hashEhCommit consulta qual repositorio?",
+      "escolha": "A raiz do estado (RAIZ: RFM_ESTADO_ROOT, CLAUDE_PROJECT_DIR ou cwd), nao o process.cwd()",
+      "porque": "o carimbo pertence ao fluxo cujo estado mora na RAIZ; o executor usou o cwd e a bateria (cwd em sandbox que tambem e repo) caiu de 0 para 15 falhas; os demais git do estado.cjs ja usam RAIZ",
+      "estagio": "executar",
+      "em": "2026-10-29T19:44:12.948Z"
+    },
+    {
+      "pergunta": "Achado preexistente da revisao 2: estado do colheita-pos-2-1-0 cita slugs de projeto de trabalho",
+      "escolha": "Nao mexer",
+      "porque": "os slugs citados passam no gate-publicacao-destino (lista privada do usuario e a fonte do que e sensivel; tbc-apps medido com exit 0 em 2026-10-29); o design deste fluxo foi anonimizado por cautela, sem mudar a regra",
+      "estagio": "revisar",
+      "em": "2026-10-29T20:20:47.679Z"
+    },
+    {
+      "pergunta": "Criterio da tarefa 4 (grep -n 'contagem global') saiu vazio no verificar",
+      "escolha": "Requebrar a linha do bullet sem mudar texto nem bytes",
+      "porque": "a quebra caia entre as duas palavras; exit vazio nao e sucesso, e a mudanca e so de espaco em branco (16370 B antes e depois, tetos verdes)",
+      "estagio": "verificar",
+      "em": "2026-10-29T20:28:19.054Z"
+    },
+    {
+      "pergunta": "Catraca do verificar pulou a tarefa 1 (baseline > 300 s)",
+      "escolha": "timeout: 900000 no bloco mutacao da tarefa 1",
+      "porque": "testa-estado.sh leva 215-300 s sozinho nesta maquina; o teto padrao torna a tarefa nao mensuravel",
+      "estagio": "verificar",
+      "em": "2026-10-29T20:38:27.916Z"
+    }
+  ],
+  "reaberturas": [
+    {
+      "em": "2026-10-29",
+      "de": "revisar",
+      "motivo": "verificar: criterio da tarefa 4 (grep contagem global) saia vazio pela quebra de linha; requebra em skills/plano/SKILL.md, mesmo texto e bytes"
+    }
+  ]
+}
