@@ -20,6 +20,13 @@
  *   P15 pergunta cujo único vocabulário comum com a memória é o do projeto (regra, fluxo...): exit 0
  *   P16 banco: observação do projeto atual que abre com `---` e cabeçalho: exit 2 com o trecho útil;
  *       a mesma observação gravada em OUTRO projeto: exit 0
+ *   P17 marcador `## Q1 — ` (cabeçalho Markdown): exit 2 e Q1 no stderr
+ *   P18 marcador `### **Q1** ` (cabeçalho com negrito): exit 2
+ *   P19 marcador `1. **Q1** ` (item numerado): exit 2
+ *   P20 marcador `• Q1 ` (bullet •): exit 2
+ *   P21 marcador `+ Q1 ` (bullet +): exit 2
+ *   P22 `Veja o item Q1 do plano?` no meio de uma linha que começa com texto: exit 0
+ *   P24 `2026. Q1 ` (ano no começo da linha): exit 0; P24b `12. Q1 ` (item de dois dígitos): exit 2
  *
  * Os exit 0 de P5 a P9 são contrastados com o P1 do mesmo jeito: a mesma montagem, só
  * a condição muda, então um exit 0 sem o mecanismo não passa por acidente.
@@ -345,6 +352,95 @@ teste('P16 banco: observação do projeto atual abrindo com --- e cabeçalho: ex
 teste('P16b a mesma observação gravada em OUTRO projeto: exit 0', () => {
   const r = rodar(cenarioComBanco(20000, { projeto: 'outro-projeto', conteudo: OBS_COM_CABECALHO }));
   assert(r.status === 0, `esperado exit 0, obteve ${r.status} (stderr: ${r.stderr})`);
+});
+
+// Marcador inteiro da pergunta no fixture, com o emoji que o abre. Os casos P17 a P22 trocam este trecho
+// pela forma de marcador que querem testar: sem trocar o emoji, ele casaria no lugar da forma em teste.
+const TRECHO_MARCADOR_Q1 = '❓ **Q1 — Desligar o gate**:';
+
+function transcritoComMarcador(novo) {
+  return trocar(TRANSCRITO_RESPONDE, TRECHO_MARCADOR_Q1, novo);
+}
+
+teste('P17 marcador `## Q1 — ` (cabeçalho Markdown): exit 2 e Q1 no stderr', () => {
+  const c = cenario({ transcrito: transcritoComMarcador('## Q1 — Desligar o gate:') });
+  const r = rodar(c);
+  assert(r.status === 2, `esperado exit 2, obteve ${r.status} (stderr: ${r.stderr})`);
+  assert(r.stderr.includes('Q1'), 'stderr sem Q1');
+});
+
+teste('P18 marcador `### **Q1** ` (cabeçalho com negrito): exit 2', () => {
+  const c = cenario({ transcrito: transcritoComMarcador('### **Q1** Desligar o gate:') });
+  const r = rodar(c);
+  assert(r.status === 2, `esperado exit 2, obteve ${r.status} (stderr: ${r.stderr})`);
+});
+
+teste('P19 marcador `1. **Q1** ` (item numerado): exit 2', () => {
+  const c = cenario({ transcrito: transcritoComMarcador('1. **Q1** Desligar o gate:') });
+  const r = rodar(c);
+  assert(r.status === 2, `esperado exit 2, obteve ${r.status} (stderr: ${r.stderr})`);
+});
+
+teste('P20 marcador `• Q1 ` (bullet •): exit 2', () => {
+  const c = cenario({ transcrito: transcritoComMarcador('• Q1 Desligar o gate:') });
+  const r = rodar(c);
+  assert(r.status === 2, `esperado exit 2, obteve ${r.status} (stderr: ${r.stderr})`);
+});
+
+teste('P21 marcador `+ Q1 ` (bullet +): exit 2', () => {
+  const c = cenario({ transcrito: transcritoComMarcador('+ Q1 Desligar o gate:') });
+  const r = rodar(c);
+  assert(r.status === 2, `esperado exit 2, obteve ${r.status} (stderr: ${r.stderr})`);
+});
+
+teste('P22 `Veja o item Q1 do plano?` no meio de linha que começa com texto: exit 0', () => {
+  const c = cenario({ transcrito: transcritoComMarcador('Veja o item Q1 do plano?') });
+  const r = rodar(c);
+  assert(r.status === 0, `esperado exit 0, obteve ${r.status} (stderr: ${r.stderr})`);
+});
+
+// Achado 1 da revisão 1: linha que abre com ano ("2026. Q3 faturou mais?") não é item de lista.
+teste('P24 `2026. Q1 ` (ano, não item numerado): exit 0', () => {
+  const c = cenario({ transcrito: transcritoComMarcador('2026. Q1 Desligar o gate:') });
+  const r = rodar(c);
+  assert(r.status === 0, `esperado exit 0, obteve ${r.status} (stderr: ${r.stderr})`);
+});
+
+teste('P24b contraste: `12. Q1 ` (item numerado de dois dígitos): exit 2', () => {
+  const c = cenario({ transcrito: transcritoComMarcador('12. Q1 Desligar o gate:') });
+  const r = rodar(c);
+  assert(r.status === 2, `esperado exit 2, obteve ${r.status} (stderr: ${r.stderr})`);
+});
+
+// P23: 55 observações de OUTRO projeto casam a pergunta melhor (8 repetições: bm25 -37,7) que a única do
+// atual (bm25 -36,6), e o SQL corta em 50 antes do filtro de projeto. O enchimento tem de manter o df dos
+// termos abaixo de 2% das vivas (2856 x 0,02 = 57); com 400 linhas, como no P12, a consulta nem sai.
+const OBS_ATUAL_P23 = 'Decisao sobre desligar arquivo rainforest publicacao neste repositorio cliente\n\n' +
+  'desligar arquivo rainforest publicacao neste repositorio cliente '.repeat(3);
+teste('P23 banco: 55 observações de outro projeto com bm25 melhor não escondem a do atual: exit 2 com o trecho dela', () => {
+  const c = cenario({ transcrito: TRANSCRITO_RESPONDE, comMemoria: false });
+  const dono = canonicoDoCaminho(c.proj).canonico;
+  c.env = { RFM_PERGUNTA_MEMORIA_ORCAMENTO_MS: '20000' };
+  const db = new DatabaseSync(path.join(c.rfm, 'rainforest.db'));
+  criarSchema(db);
+  const ins = db.prepare('INSERT INTO observacoes (projeto, conteudo, criada_em, origem) VALUES (?, ?, ?, ?)');
+  db.exec('BEGIN');
+  for (let i = 0; i < 2800; i++) {
+    ins.run('projeto-enchimento', 'Registro generico ' + i + '\n\nrotina comum de trabalho numero ' + i + ' sem relevancia', '2026-10-01T10:00:00.000Z', 'f' + i);
+  }
+  db.exec('COMMIT');
+  ins.run(dono, OBS_ATUAL_P23, '2026-10-02T10:00:00.000Z', 'alvo-p23');
+  db.exec('BEGIN');
+  for (let i = 0; i < 55; i++) {
+    const base = 'desligar arquivo rainforest publicacao neste repositorio cliente ';
+    ins.run('outro-projeto', 'Decisao outra ' + i + '\n\n' + base.repeat(8), '2026-10-02T10:00:00.000Z', 'out-p23-' + i);
+  }
+  db.exec('COMMIT');
+  db.close();
+  const r = rodar(c);
+  assert(r.status === 2, `esperado exit 2, obteve ${r.status} (stderr: ${r.stderr})`);
+  assert(r.stderr.includes('Decisao sobre desligar arquivo'), 'stderr sem o trecho da observação do projeto atual');
+  assert(r.stderr.includes('o banco tem observação de ' + dono), 'stderr sem a citação do banco');
 });
 
 for (const d of tmpdirs) {

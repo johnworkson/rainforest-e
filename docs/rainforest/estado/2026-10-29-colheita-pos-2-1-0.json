@@ -1,0 +1,226 @@
+{
+  "slug": "2026-10-29-colheita-pos-2-1-0",
+  "titulo": "Colheita pos-2.1.0: lapidar o gate-pergunta-memoria, cobertura no marcar executar e itens plantados",
+  "criado_em": "2026-10-29",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-29-colheita-pos-2-1-0.md",
+    "em": "2026-10-29"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-29-colheita-pos-2-1-0.md",
+    "tarefas": 6,
+    "paralelas": [
+      1,
+      3,
+      4
+    ],
+    "em": "2026-10-29"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-29",
+    "tarefas_ok": 6,
+    "tarefas": 6,
+    "em": "2026-10-29",
+    "carimbos": [
+      {
+        "tarefa": 1,
+        "hash_base": "d95ca02c",
+        "iteracao": 1,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T11:46:16.107Z"
+      },
+      {
+        "tarefa": 1,
+        "hash_base": "d95ca02c",
+        "iteracao": 2,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T11:58:55.043Z"
+      },
+      {
+        "tarefa": 2,
+        "hash_base": "26011958",
+        "iteracao": 1,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T11:58:55.043Z"
+      },
+      {
+        "tarefa": 4,
+        "hash_base": "d95ca02c",
+        "iteracao": 1,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T11:58:55.043Z"
+      },
+      {
+        "tarefa": 3,
+        "hash_base": "d95ca02c",
+        "iteracao": 1,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T12:26:27.147Z"
+      },
+      {
+        "tarefa": 5,
+        "hash_base": "856f4815",
+        "iteracao": 1,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T12:26:27.147Z"
+      },
+      {
+        "tarefa": 6,
+        "hash_base": "1bd74137",
+        "iteracao": 1,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T12:26:27.147Z"
+      },
+      {
+        "tarefa": 1,
+        "hash_base": "6e391545",
+        "iteracao": 3,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T12:39:00.939Z"
+      },
+      {
+        "tarefa": 4,
+        "hash_base": "6e391545",
+        "iteracao": 2,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T12:39:00.939Z"
+      },
+      {
+        "tarefa": 6,
+        "hash_base": "6e391545",
+        "iteracao": 2,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T12:39:00.939Z"
+      },
+      {
+        "tarefa": 5,
+        "hash_base": "d0000000",
+        "iteracao": 2,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T12:46:19.580Z"
+      },
+      {
+        "tarefa": 5,
+        "hash_base": "c5af1e04e993ef4b8096bec9960840a4b1f89cac",
+        "iteracao": 3,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T12:46:30.195Z"
+      }
+    ],
+    "comando": "node -e (status e resultado dos 6 ids do D6) e node scripts/conferir-fluxo.cjs cobertura",
+    "saida": "6 de 6 colhidos com resultado; ok: cobertura valida - 7 decisoes, 6 tarefas",
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-pergunta-memoria.cjs, P17 e P24"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-pergunta-memoria.cjs, P23"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-estado.sh, executar ok recusado: plano com nota dentro do bloco mutacao"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "vermelho",
+        "fixture": "testa-conferir-mutacao.sh, TMPDIR nao gravavel sai 69 nao-verificavel"
+      },
+      {
+        "tarefa": 5,
+        "resultado": "n/a",
+        "motivo": "grava dados do usuario pelo ideias.cjs colher, sem codigo"
+      },
+      {
+        "tarefa": 6,
+        "resultado": "n/a",
+        "motivo": "texto e versao"
+      }
+    ],
+    "destinos": [
+      {
+        "pendente": "tarefa-5: 3 observacoes plantadas em 2026-10-29 por sessoes de outros projetos (protheus-inovacao x2, tbc-apps) depois da abertura do fluxo",
+        "destino": "descartada",
+        "motivo": "fora do D6, que cobre o plantado na abertura; seguem no livro para a colheita do projeto dono"
+      }
+    ],
+    "reaberturas": 1
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "c13310bb13799bcea52894a0e6159bce854f5523",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a91acca51b738cc88",
+        "veredito": "ok",
+        "em": "2026-10-29",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/1430d221-3e0e-4b0d-9cdd-7a92040fc1f0/subagents/agent-a91acca51b738cc88.jsonl"
+      }
+    ],
+    "achados": 2,
+    "base": "46773615f37b2866f221843c26d064e2ee119ae3",
+    "head": "c13310bb13799bcea52894a0e6159bce854f5523",
+    "em": "2026-10-29",
+    "voltas": [
+      {
+        "volta": 1,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "ab46ad6bc18de3b40",
+            "veredito": "ok",
+            "em": "2026-10-29",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/1430d221-3e0e-4b0d-9cdd-7a92040fc1f0/subagents/agent-ab46ad6bc18de3b40.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 2,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a55377754972ebe8a",
+            "veredito": "ok",
+            "em": "2026-10-29",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/1430d221-3e0e-4b0d-9cdd-7a92040fc1f0/subagents/agent-a55377754972ebe8a.jsonl"
+          }
+        ]
+      }
+    ]
+  },
+  "verificar": {
+    "status": "ok",
+    "em": "2026-10-29",
+    "criterio": "tarefa 5: listar --tipo observacao abre com 0 plantada (observacao)",
+    "comando": "node hooks/testa-gate-pergunta-memoria.cjs; node hooks/testa-memoria-assunto.cjs; bash scripts/testa-estado.sh; bash scripts/testa-conferir-mutacao.sh; node -e (6 ids do D6 colhidos); node -e (versoes 2.1.1)",
+    "saida": "T1/T2 ok: 27 falhou: 0 (P17-P24 ok) e 15 ok, 0 falha(s); T3 resultado: 334 ok, 0 falhas (casos D4 ok); T4 ok: 215 falhou: 0 (caso TMPDIR exit=69); T5 6 de 6 colhida, memoria do projeto existe; T6 { a: 2.1.1, b: 2.1.1, r: 2.1.1, c: 2.1.1 } IGUAIS",
+    "faltou": "o criterio conta o arquivo inteiro, que outras sessoes escrevem enquanto o fluxo roda; os 6 itens do D6 estao colhidos (node -e conferiu status e resultado de cada id). Emendar o criterio da tarefa 5 para os ids presentes na abertura.",
+    "sensor_externo": "bash scripts/testa-estado.sh",
+    "head": "c13310bb13799bcea52894a0e6159bce854f5523"
+  },
+  "fechar": {
+    "status": "pendente",
+    "em": "2026-10-29"
+  },
+  "reaberturas": [
+    {
+      "em": "2026-10-29",
+      "de": "revisar",
+      "motivo": "revisao 1 ok com 3 achados [baixa] que cabem no PR: (1) item numerado casa ano '2026. Q3 ...?' no RE_MARCADOR_Q; (2) docs sem 'Q em bloco de codigo' e 'PATH sem utilitarios do Git Bash' fora (D7); (3) rmSync do preflight sem try/catch"
+    }
+  ]
+}

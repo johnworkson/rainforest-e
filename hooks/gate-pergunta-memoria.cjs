@@ -31,8 +31,10 @@ const ORCAMENTO_BANCO_MS = process.env.RFM_PERGUNTA_MEMORIA_ORCAMENTO_MS !== und
   ? Number(process.env.RFM_PERGUNTA_MEMORIA_ORCAMENTO_MS)
   : 1500;
 const JANELA_VIVA_MS = 6 * 3600 * 1000;
-// Marcador de pergunta: Q<n> no começo da linha (admite `- `, `> `, `**`). Recap em prosa ("Fechado: Q1 (b)") não conta.
-const RE_MARCADOR_Q = /^[ \t>*_\-\p{Extended_Pictographic}\p{M}]*Q(\d+)\b/gmu;
+// Marcador de pergunta: Q<n> no começo da linha (admite `- `, `> `, `**`, emoji, cabeçalho `#`, `• `, `+ ` e item
+// numerado `1. `/`1) ` até dois dígitos, para não ler ano como item: "2026. Q3 ...?"). Recap em prosa
+// ("Fechado: Q1 (b)") não conta.
+const RE_MARCADOR_Q = /^[ \t>*_\-#•+\p{Extended_Pictographic}\p{M}]*(?:\d{1,2}[.)][ \t*_]*)?Q(\d+)\b/gmu;
 const INICIO = Date.now();
 
 // Palavras comuns demais para contar como assunto. Já normalizadas (sem acento, minúsculas).
@@ -190,7 +192,7 @@ function achadoNoBanco(banco, texto) {
   if (Date.now() - INICIO > ORCAMENTO_BANCO_MS) return null;
   try {
     const { buscarPorAssunto } = require('./lib/memoria-assunto.cjs');
-    const achados = buscarPorAssunto(banco.conexao, texto, { projetoAtual: banco.canonico, max: 10 });
+    const achados = buscarPorAssunto(banco.conexao, texto, { projetoAtual: banco.canonico, max: 10, soProjeto: true });
     for (const a of achados) {
       if (a.projeto !== banco.canonico) continue;
       const linha = String(a.conteudo || '').split(/\r?\n/).map((l) => l.trim())
