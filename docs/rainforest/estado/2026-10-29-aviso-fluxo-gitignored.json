@@ -1,0 +1,88 @@
+{
+  "slug": "2026-10-29-aviso-fluxo-gitignored",
+  "titulo": "aviso-fluxo deixa passar arquivo ignorado pelo git (#623)",
+  "criado_em": "2026-10-29",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-29-aviso-fluxo-gitignored.md",
+    "em": "2026-10-29"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-29-aviso-fluxo-gitignored.md",
+    "tarefas": 2,
+    "paralelas": [],
+    "em": "2026-10-29"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-29",
+    "comando": "node hooks/testa-bloqueio-fluxo.cjs",
+    "saida": "ok: 37   falhou: 0   skipped: 0",
+    "tarefas_ok": 2,
+    "tarefas": 2,
+    "carimbos": [
+      {
+        "tarefa": 1,
+        "hash_base": "fcf657ea",
+        "iteracao": 1,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T17:39:11.800Z"
+      },
+      {
+        "tarefa": 2,
+        "hash_base": "fcf657ea",
+        "iteracao": 1,
+        "sessao": "1430d221-3e0e-4b0d-9cdd-7a92040fc1f0",
+        "ts": "2026-10-29T17:39:11.800Z"
+      }
+    ],
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-bloqueio-fluxo.cjs, caso rainforest na main sem fluxo: Edit de .ps1 listado no .gitignore passa (#623)"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "n/a",
+        "motivo": "so texto e numero de versao"
+      }
+    ],
+    "em": "2026-10-29"
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "f35c06442d31b87bfa0c132dff53fd4ee704617a",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a7000daa21d080469",
+        "veredito": "ok",
+        "em": "2026-10-29",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/1430d221-3e0e-4b0d-9cdd-7a92040fc1f0/subagents/agent-a7000daa21d080469.jsonl"
+      }
+    ],
+    "achados": 0,
+    "base": "e74626e754f9d029085189c5a09ff2678ec3eb6c",
+    "head": "f35c06442d31b87bfa0c132dff53fd4ee704617a",
+    "em": "2026-10-29"
+  },
+  "verificar": {
+    "status": "ok",
+    "comando": "node hooks/testa-bloqueio-fluxo.cjs; bash scripts/testa-versao.sh",
+    "saida": "ok: Edit de .ps1 listado no .gitignore passa (#623); ok: .ps1 rastreado que casa com o .gitignore continua barrado (#623); ok: 37 falhou: 0 skipped: 0; testa-versao ok: 5 falhou: 0; grep o Edit ja o barra = 0; grep ignorado pelo git README = 1",
+    "sensor_externo": "node hooks/testa-bloqueio-fluxo.cjs",
+    "em": "2026-10-29",
+    "head": "f35c06442d31b87bfa0c132dff53fd4ee704617a"
+  },
+  "fechar": {
+    "status": "pendente"
+  }
+}
