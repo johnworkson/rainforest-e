@@ -485,6 +485,15 @@ function obterDefinicaoAgente(raiz, nomeAgente, agentesDir) {
   return null; // Arquivo não encontrado
 }
 
+// Frontmatter do arquivo do agente lido SEM linha `tools:` (herda todas as
+// ferramentas). So chamada para o nao declarado com `escreve` true, que o
+// `inferirConfigNaoDeclarado` ja validou: o nome e seguro e o arquivo existe.
+function frontmatterSemLinhaTools(raiz, nomeAgente) {
+  const def = obterDefinicaoAgente(raiz, nomeAgente);
+  const fmMatch = def && def.match(/^---\n([\s\S]*?)\n---/);
+  return Boolean(fmMatch) && !parseToolsDoFrontmatter(fmMatch[1]).declarado;
+}
+
 function inferirConfigNaoDeclarado(raiz, nomeAgente) {
   // Agente fora do manifesto nao e mais barrado (issue #264) — mas tambem nao
   // pode ser presumido read-only. Presumir desligaria a regra 11 justamente
@@ -493,10 +502,11 @@ function inferirConfigNaoDeclarado(raiz, nomeAgente) {
   // Write e Edit no frontmatter; entrar como read-only seria pior do que o
   // deny que esta funcao substitui.
   //
-  // `escreve: true` sai so com EVIDENCIA de escrita — uma tool fora da
-  // allowlist read-only. Todo o resto (arquivo fora de alcance, sem
-  // frontmatter, sem `tools:`, `tools:` em formato que a portaria nao le) sai
-  // como `escreve: false` com `conferido: false`, que e o allow MARCADO da
+  // `escreve: true` sai com EVIDENCIA de escrita — uma tool fora da allowlist
+  // read-only, ou frontmatter SEM linha `tools:` (D3 passo 3, 2026-10-28): no
+  // Claude Code o agente sem `tools:` herda todas as ferramentas, Write incluso.
+  // Todo o resto (arquivo fora de alcance, sem frontmatter, `tools:` em formato
+  // que a portaria nao le) sai como `escreve: false` com `conferido: false`, que e o allow MARCADO da
   // rodada 4 da revisao: quem ler o log distingue "conferi e e read-only" de
   // "nao deu para conferir".
   //
@@ -521,7 +531,10 @@ function inferirConfigNaoDeclarado(raiz, nomeAgente) {
   if (!fmMatch) return base;
 
   const { declarado: temTools, tools } = parseToolsDoFrontmatter(fmMatch[1]);
-  if (!temTools || !tools) return base;
+  // `semTools` marca a inferencia por heranca: em repo sem trilho a regra 11
+  // (isolation) a dispensa, para nao barrar quem so herdou tools.
+  if (!temTools) return { estagios: null, escreve: true, conferido: true, semTools: true };
+  if (!tools) return base;
 
   return { estagios: null, escreve: Boolean(validarToolsAowlist(tools)), conferido: true };
 }
@@ -974,25 +987,40 @@ function main() {
     estagiosDeclarados !== null && !estagiosDeclarados.includes(estagioAtivo);
 
   // Issue #430, D3/D4/D5 — o despacho de agente que ESCREVE sai do estagio dele
-  // sem `leve` na branch e e barrado. Reverte a #264 so para `declarado &&
-  // escreve: true`: agente nao declarado (outro plugin), `escreve: false`, repo
-  // sem trilho de fluxo ou com a chave `aviso-fluxo` desligada seguem como estao
-  // (a portaria so registra). A barreira mora no ramo `escreve === true`, depois
-  // da regra 11 (isolation) e da regra 10 (name) e antes do allow, para a
-  // mensagem da regra 11 continuar sendo a que sai quando ela falha.
+  // sem `leve` na branch e e barrado. Desde 2026-10-28 (fluxo colheita-observacoes,
+  // emenda D3 da revisao 1) a barreira vale tambem para quem se comporta como
+  // escritor sem ser declarado como tal, por um destes sinais: `isolation:
+  // "worktree"` no despacho (declarado ou nao); `escreve` inferido do frontmatter
+  // do arquivo do agente (nao declarado); frontmatter sem linha `tools:`. Os
+  // declarados com `escreve: false` (general-purpose, Explore, ...) entram por
+  // `isolation`: o manifesto diz que nao escrevem, mas com worktree eles escrevem.
+  // Fica FORA (D8): agente sem `isolation` cujo arquivo nao deu para ler; quem pega
+  // a escrita dele e o `gate-worktree`. Declarado com `escreve: false` sem
+  // isolation, repo sem trilho de fluxo ou com a chave `aviso-fluxo` desligada
+  // seguem como estao (a portaria so registra).
   //
-  // A DECISAO INTEIRA MORA NESTA LINHA: trilho ausente zera `trilhoComFluxo`,
-  // `leve` da branch libera, estagio aberto dentro dos `estagios` do agente libera.
+  // Para o declarado com `escreve: true`, a barreira mora no ramo `escreve === true`,
+  // depois da regra 11 (isolation) e da regra 10 (name) e antes do allow, para a
+  // mensagem da regra 11 continuar sendo a que sai quando ela falha. Quem se
+  // comporta como escritor sem `escreve: true` declarado (`escrevePorSinal`) sai
+  // antes desse ramo, em `negarFluxoPulado`.
+  //
+  // A DECISAO INTEIRA MORA NESTAS LINHAS: trilho ausente zera `trilhoComFluxo`,
+  // `leve` da branch libera, estagio aberto libera (declarado: dentro dos
+  // `estagios` do agente; nao declarado: qualquer estagio aberto).
   const escreveDeclarado = declarado && agentConfig.escreve === true;
+  const escrevePorSinal = !escreveDeclarado && ((!declarado && agentConfig.escreve === true) || payload.tool_input.isolation === "worktree");
   const trilho = detectarTrilhoFluxo(raiz);
   const trilhoComFluxo = trilho !== null && require("./lib/config.cjs").ligado("aviso-fluxo", { projeto: raiz });
-  const leve = trilhoComFluxo && escreveDeclarado
+  const leve = trilhoComFluxo && (escreveDeclarado || escrevePorSinal)
     ? Boolean(leveDaBranch({ gitTop: raiz, branch: obterBranch(raiz) }))
     : false;
   const estagioPermitido = trilho === "protheus"
     ? protheusAberto({ gitTop: raiz, branch: obterBranch(raiz) })
-    : Boolean(estResult) && Array.isArray(estagiosDeclarados) && estagiosDeclarados.includes(estResult.estagio);
-  const bloqueiaFluxoPulado = trilhoComFluxo && escreveDeclarado && !leve && !estagioPermitido;
+    : escrevePorSinal
+      ? Boolean(estResult)
+      : Boolean(estResult) && Array.isArray(estagiosDeclarados) && estagiosDeclarados.includes(estResult.estagio);
+  const bloqueiaFluxoPulado = trilhoComFluxo && (escreveDeclarado || escrevePorSinal) && !leve && !estagioPermitido;
 
 
   // D3 passo 6: escreve: false com tools fora de allowlist → nega.
@@ -1104,6 +1132,94 @@ function main() {
     }
   }
 
+  // Issue #430 (D3/D5): a mensagem e a saida da barreira de fluxo pulado, uma so
+  // para o declarado e o nao declarado. Muda so a abertura (quem e o agente e por
+  // que conta como escritor), a condicao e o `exige`. Chamada duas vezes: o
+  // nao declarado sai antes do ramo `escreve: true` (abaixo), e o declarado sai
+  // dentro dele, depois da regra 11 e da regra 10.
+  const negarFluxoPulado = () => {
+    // O sinal que tornou o agente escritor. Para o nao declarado com `escreve`
+    // inferido, separa "tool de escrita" de "frontmatter sem tools:" (herda tudo).
+    const porQueEscreve = [
+      payload.tool_input.isolation === "worktree" ? 'isolation: "worktree" no despacho' : null,
+      !declarado && agentConfig.escreve === true
+        ? (frontmatterSemLinhaTools(raiz, nomeAgente)
+          ? "frontmatter sem `tools:` (herda todas as ferramentas)"
+          : "tool de escrita no frontmatter")
+        : null,
+    ].filter(Boolean).join(" e ");
+    const exige = escreveDeclarado
+      ? (Array.isArray(estagiosDeclarados) ? estagiosDeclarados.join(" ou ") : "(manifesto sem 'estagios')")
+      : "um estagio aberto";
+    const abertura = escreveDeclarado
+      ? `agente '${nomeAgente}' escreve (escreve: true)`
+      : declarado
+        ? `agente '${nomeAgente}' declarado com escreve: false, tratado como escritor (por ${porQueEscreve})`
+        : `agente '${nomeAgente}' nao declarado no manifesto, tratado como escritor (por ${porQueEscreve})`;
+    const condicao = escreveDeclarado ? "e so roda no estagio que declara" : "e so roda com fluxo aberto";
+    // Caminho absoluto com barras `/`: o comando impresso roda de qualquer cwd e
+    // sem contrabarra que o shell do agente engula (Issue #430, emenda 2).
+    const caminhoEstado = path.join(path.resolve(__dirname, ".."), "scripts", "estado.cjs").split(path.sep).join("/");
+    // O node vai pelo caminho do processo, entre aspas (Issue #430, emenda 4): nome nu
+    // resolve pela busca do SO, e caminho com espaco quebra sem aspas.
+    const nodeBarras = process.execPath.split(path.sep).join("/");
+    const raizBarras = raiz.split(path.sep).join("/");
+    // Issue #474: aspas SIMPLES (literais no bash e no PowerShell); com aspas duplas, um
+    // `$(...)` no nome de uma pasta executaria ao colar. Caminho com aspa simples nao vira comando.
+    const { seguro: colavel, aspas } = require("./lib/comando-colavel.cjs");
+    const podeColar = colavel(nodeBarras, caminhoEstado, raizBarras);
+    const semComando = `(caminho com aspa simples ou caractere de controle: rode o estado.cjs de ${JSON.stringify(caminhoEstado)} com o node de ${JSON.stringify(nodeBarras)})`;
+    const leveDaMensagem = podeColar
+      ? `${aspas(nodeBarras)} ${aspas(caminhoEstado)} leve --motivo '<por que>' --repo ${aspas(raizBarras)}`
+      : `${semComando} leve --motivo '<por que>' --repo ${JSON.stringify(raizBarras)}`;
+    const iniciarDaMensagem = podeColar
+      ? `${aspas(nodeBarras)} ${aspas(caminhoEstado)} iniciar --slug <slug>`
+      : `${semComando} iniciar --slug <slug>`;
+    // Saida 2 depende da branch. HEAD destacado: o leve vale por branch, entao manda
+    // trocar para uma. Branch padrao de repo rainforest: o leve e recusado ali (regra 11),
+    // entao manda despachar de dentro do worktree do fluxo. Demais casos: o leve direto.
+    const branchAtual = obterBranch(raiz);
+    const saida2 = branchAtual === "HEAD"
+      ? `\n  saida 2: HEAD destacado, e o leve vale por branch: troque para uma branch de trabalho (git switch -c fluxo/<nome>) e despache dela`
+      : trilho === "rainforest" && branchEhPadrao(raiz, branchAtual)
+        ? `\n  saida 2: '${branchAtual}' e a branch padrao, e o leve e recusado nela (regra 11): despache de dentro do worktree do fluxo, onde o leve vale: ${leveDaMensagem}`
+        : `\n  saida 2: caminho leve, para hotfix mecanico: ${leveDaMensagem}`;
+    // Issue #447: fora-de-fluxo numa branch de trabalho costuma ser branch que nao
+    // casou com o slug (ex.: `fluxo/<data>-<nome>` quando o esperado e `fluxo/<nome>`).
+    // A mensagem diz a branch lida, a base comparada e os fluxos abertos mais perto.
+    let diagnostico = "";
+    if (foraDeFluxo && trilho === "rainforest") {
+      const diag = require("./lib/estagio-ativo.cjs").diagnosticar({ cwd: raiz });
+      if (diag && diag.abertos.length) {
+        const porque = diag.casados > 1
+          ? `${diag.casados} fluxos abertos casam com ela (ambiguo)`
+          : "nenhum fluxo aberto casa com ela";
+        diagnostico =
+          `\n  branch lida: '${diag.branch}' (comparada como '${diag.branchBase}'); ${porque}. ` +
+          `A branch tem de ser fluxo/<slug sem a data>, ou fluxo/<slug sem a data>-t<n> para tarefa paralela. Abertos mais perto: ` +
+          diag.abertos.map((a) => `${a.slug} (espera ${a.esperado})`).join(", ");
+      }
+    }
+    const motivo =
+      `${abertura} ${condicao}: exige ${exige}; ` +
+      `estagio aberto: ${estagioAtivo} (Issue #430, D3/D5)` +
+      diagnostico +
+      `\n  saida 1: abrir ou avancar o fluxo ate ${exige} (rainforest: /rainforest-mind:brainstorm ou ${iniciarDaMensagem}; protheus: /protheus:trabalhar)` +
+      saida2 +
+      // Issue #442: o comando comeca por string entre aspas, que PowerShell so roda com `& `.
+      "\n  em PowerShell, prefixe `& ` aos comandos acima";
+    gravarDespacho(raiz, "deny", nomeAgente, estagioAtivo, sessao, motivo);
+    negar(motivo);
+  };
+
+  // Quem se comporta como escritor sem `escreve: true` declarado (isolation no
+  // despacho, ou escreve inferido do frontmatter) sai aqui, antes do ramo
+  // `escreve: true`, para o motivo nao falar em `escreve: true` de um agente que
+  // nao o declara.
+  if (escrevePorSinal && bloqueiaFluxoPulado) {
+    negarFluxoPulado();
+  }
+
   // `escreve: true` — o agente PODE escrever, e por isso a portaria exige aqui
   // a trava que torna isso aceitavel, em vez de negar de saida.
   //
@@ -1139,11 +1255,17 @@ function main() {
   if (agentConfig.escreve === true) {
     const isolamento = payload.tool_input.isolation;
     const nomeDado = payload.tool_input.name;
+    const quemEscreve = declarado
+      ? "declara 'escreve: true'"
+      : agentConfig.semTools ? "herda todas as tools (frontmatter sem 'tools:')" : "tem tool de escrita no frontmatter";
+    // Frontmatter sem `tools:` so dispensa o isolamento em repo sem trilho de fluxo; com trilho,
+    // a regra 11 vale como para qualquer escritor, e a regra 10 (`name`) vale sempre.
+    const dispensaIsolamento = agentConfig.semTools === true && trilho === null;
 
-    if (isolamento !== "worktree" && !worktreeDeclarado) {
+    if (isolamento !== "worktree" && !worktreeDeclarado && !dispensaIsolamento) {
       const foraDeRepo = gitSaida(payload.cwd || raiz, ["rev-parse", "--git-dir"]) === null;
       const motivo =
-        `agente '${nomeAgente}' declara 'escreve: true' e so roda com isolation: "worktree"` +
+        `agente '${nomeAgente}' ${quemEscreve} e so roda com isolation: "worktree"` +
         ` (veio ${JSON.stringify(isolamento)}) — agente que edita nunca roda na arvore do usuario (regra 11)` +
         (foraDeRepo
           ? `. O cwd da sessao nao e repo git, entao o harness nao cria o worktree: crie um worktree linkado` +
@@ -1156,7 +1278,7 @@ function main() {
 
     if (typeof nomeDado === "string" && nomeDado.trim() !== "") {
       const motivo =
-        `agente '${nomeAgente}' declara 'escreve: true' e foi despachado com name: ${JSON.stringify(nomeDado)}` +
+        `agente '${nomeAgente}' ${quemEscreve} e foi despachado com name: ${JSON.stringify(nomeDado)}` +
         ` — agente que edita nunca e nomeado (regra 10): nomeado vira teammate, o isolamento nao se aplica` +
         ` e a entrega para de voltar inline`;
       gravarDespacho(raiz, "deny", nomeAgente, estagioAtivo, sessao, motivo);
@@ -1167,60 +1289,7 @@ function main() {
     // na branch, e barrado com as duas saidas que o proprio fluxo oferece. A
     // mensagem nomeia o agente, o estagio exigido e as saidas; o deny vai ao log.
     if (bloqueiaFluxoPulado) {
-      const exige = Array.isArray(estagiosDeclarados) ? estagiosDeclarados.join(" ou ") : "(manifesto sem 'estagios')";
-      // Caminho absoluto com barras `/`: o comando impresso roda de qualquer cwd e
-      // sem contrabarra que o shell do agente engula (Issue #430, emenda 2).
-      const caminhoEstado = path.join(path.resolve(__dirname, ".."), "scripts", "estado.cjs").split(path.sep).join("/");
-      // O node vai pelo caminho do processo, entre aspas (Issue #430, emenda 4): nome nu
-      // resolve pela busca do SO, e caminho com espaco quebra sem aspas.
-      const nodeBarras = process.execPath.split(path.sep).join("/");
-      const raizBarras = raiz.split(path.sep).join("/");
-      // Issue #474: aspas SIMPLES (literais no bash e no PowerShell); com aspas duplas, um
-      // `$(...)` no nome de uma pasta executaria ao colar. Caminho com aspa simples nao vira comando.
-      const { seguro: colavel, aspas } = require("./lib/comando-colavel.cjs");
-      const podeColar = colavel(nodeBarras, caminhoEstado, raizBarras);
-      const semComando = `(caminho com aspa simples ou caractere de controle: rode o estado.cjs de ${JSON.stringify(caminhoEstado)} com o node de ${JSON.stringify(nodeBarras)})`;
-      const leveDaMensagem = podeColar
-        ? `${aspas(nodeBarras)} ${aspas(caminhoEstado)} leve --motivo '<por que>' --repo ${aspas(raizBarras)}`
-        : `${semComando} leve --motivo '<por que>' --repo ${JSON.stringify(raizBarras)}`;
-      const iniciarDaMensagem = podeColar
-        ? `${aspas(nodeBarras)} ${aspas(caminhoEstado)} iniciar --slug <slug>`
-        : `${semComando} iniciar --slug <slug>`;
-      // Saida 2 depende da branch. HEAD destacado: o leve vale por branch, entao manda
-      // trocar para uma. Branch padrao de repo rainforest: o leve e recusado ali (regra 11),
-      // entao manda despachar de dentro do worktree do fluxo. Demais casos: o leve direto.
-      const branchAtual = obterBranch(raiz);
-      const saida2 = branchAtual === "HEAD"
-        ? `\n  saida 2: HEAD destacado, e o leve vale por branch: troque para uma branch de trabalho (git switch -c fluxo/<nome>) e despache dela`
-        : trilho === "rainforest" && branchEhPadrao(raiz, branchAtual)
-          ? `\n  saida 2: '${branchAtual}' e a branch padrao, e o leve e recusado nela (regra 11): despache de dentro do worktree do fluxo, onde o leve vale: ${leveDaMensagem}`
-          : `\n  saida 2: caminho leve, para hotfix mecanico: ${leveDaMensagem}`;
-      // Issue #447: fora-de-fluxo numa branch de trabalho costuma ser branch que nao
-      // casou com o slug (ex.: `fluxo/<data>-<nome>` quando o esperado e `fluxo/<nome>`).
-      // A mensagem diz a branch lida, a base comparada e os fluxos abertos mais perto.
-      let diagnostico = "";
-      if (foraDeFluxo && trilho === "rainforest") {
-        const diag = require("./lib/estagio-ativo.cjs").diagnosticar({ cwd: raiz });
-        if (diag && diag.abertos.length) {
-          const porque = diag.casados > 1
-            ? `${diag.casados} fluxos abertos casam com ela (ambiguo)`
-            : "nenhum fluxo aberto casa com ela";
-          diagnostico =
-            `\n  branch lida: '${diag.branch}' (comparada como '${diag.branchBase}'); ${porque}. ` +
-            `A branch tem de ser fluxo/<slug sem a data>, ou fluxo/<slug sem a data>-t<n> para tarefa paralela. Abertos mais perto: ` +
-            diag.abertos.map((a) => `${a.slug} (espera ${a.esperado})`).join(", ");
-        }
-      }
-      const motivo =
-        `agente '${nomeAgente}' escreve (escreve: true) e so roda no estagio que declara: exige ${exige}; ` +
-        `estagio aberto: ${estagioAtivo} (Issue #430, D3/D5)` +
-        diagnostico +
-        `\n  saida 1: abrir ou avancar o fluxo ate ${exige} (rainforest: /rainforest-mind:brainstorm ou ${iniciarDaMensagem}; protheus: /protheus:trabalhar)` +
-        saida2 +
-        // Issue #442: o comando comeca por string entre aspas, que PowerShell so roda com `& `.
-        "\n  em PowerShell, prefixe `& ` aos comandos acima";
-      gravarDespacho(raiz, "deny", nomeAgente, estagioAtivo, sessao, motivo);
-      negar(motivo);
+      negarFluxoPulado();
     }
 
     // Allow conferido, e a linha diz SOB QUE isolamento — sem isso o log

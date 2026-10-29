@@ -93,6 +93,7 @@ function estado(repo, cwd, args) {
 function despachar(repo, cwd, subagente, opcoes = {}, hook = HOOK) {
   const toolInput = { subagent_type: subagente, prompt: "Tarefa de teste do fluxo pulado." };
   if (!opcoes.semIsolation) toolInput.isolation = "worktree";
+  if (opcoes.nome) toolInput.name = opcoes.nome;
   const payload = {
     session_id: "sessao-fluxo-pulado",
     cwd,
@@ -170,18 +171,26 @@ console.log("== A. rainforest sem fluxo aberto e sem leve ==");
   caso("A2 contorno: subagent_type sem prefixo (executor) tambem sai 2",
     contorno.status === 2, `exit=${contorno.status} stderr=${contorno.stderr}`);
 
-  const revisor = despachar(repo, wt, "rainforest-mind:revisor");
+  // Revisor e planejador sao despachados SEM isolation: quem so le nao roda com
+  // worktree. Desde a emenda D3 do fluxo colheita-observacoes (2026-10-28), agente
+  // declarado com `escreve: false` e despachado com `isolation: "worktree"` vira
+  // escritor e barra sem fluxo — por isso o helper, que poe isolation por padrao,
+  // nao serve para eles.
+  const revisor = despachar(repo, wt, "rainforest-mind:revisor", { semIsolation: true });
   caso("A3 revisor (escreve: false) passa sem fluxo: exit 0",
     revisor.status === 0, `exit=${revisor.status} stderr=${revisor.stderr}`);
   caso("A3 o despacho que passa grava allow no log",
     ultimaDecisao(repo) && ultimaDecisao(repo).decisao === "allow", JSON.stringify(ultimaDecisao(repo)));
 
-  const planejador = despachar(repo, wt, "rainforest-mind:planejador");
+  const planejador = despachar(repo, wt, "rainforest-mind:planejador", { semIsolation: true });
   caso("A4 planejador (escreve: false) passa sem fluxo: exit 0",
     planejador.status === 0, `exit=${planejador.status} stderr=${planejador.stderr}`);
 
-  const naoDeclarado = despachar(repo, wt, "outro-plugin:agente-solto");
-  caso("A5 agente nao declarado no manifesto passa sem fluxo: exit 0",
+  // Desde o D3 do design 2026-10-28-colheita-observacoes, nao declarado COM isolation e
+  // escritor e barra sem fluxo (casos N). O que continua passando e o que o D8 deixa
+  // fora: sem isolation e sem frontmatter legivel.
+  const naoDeclarado = despachar(repo, wt, "outro-plugin:agente-solto", { semIsolation: true });
+  caso("A5 agente nao declarado, sem isolation e sem frontmatter, passa sem fluxo: exit 0",
     naoDeclarado.status === 0, `exit=${naoDeclarado.status} stderr=${naoDeclarado.stderr}`);
 
   const semIsolation = despachar(repo, wt, "rainforest-mind:executor", { semIsolation: true });
@@ -627,6 +636,268 @@ console.log("== M. leve impresso colado no bash nao executa $(...) do nome da pa
   caso("M3 colado no bash, o leve sai 0 e libera o executor",
     r.status === 0 && despachar(repo, wt, "rainforest-mind:executor").status === 0, `exit=${r.status} ${r.stdout} ${r.stderr}`);
   fs.rmSync(sbx, { recursive: true, force: true });
+}
+
+// == N. agente fora do manifesto que ESCREVE (isolation ou tool de escrita no frontmatter) ==
+// Tarefa 1 do fluxo colheita-observacoes: a barreira de fluxo pulado vale tambem para o nao declarado.
+console.log("== N. agente fora do manifesto que escreve ==");
+// Worktree na branch `fluxo/x` (nao e a do slug de teste), com a pasta de estado do trilho rainforest.
+function worktreeX(repo) {
+  const wt = path.join(repo.sbx, "wt-x");
+  git(repo.main, ["worktree", "add", "-q", "-b", "fluxo/x", wt]);
+  fs.mkdirSync(path.join(wt, "docs", "rainforest", "estado"), { recursive: true });
+  return wt;
+}
+{
+  // N1: agente nao declarado com isolation, trilho rainforest, branch fluxo/x sem estado aberto.
+  const repo = novoRepo();
+  const wt = worktreeX(repo);
+
+  const r = despachar(repo, wt, "outro-plugin:agente-solto");
+  caso("N1 nao declarado com isolation, sem fluxo aberto na fluxo/x: barra exit 2",
+    r.status === 2, `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // N2: agente fora do manifesto, frontmatter com `tools: Read, Edit`, SEM isolation.
+  const repo = novoRepo();
+  const wt = comWorktree(repo);
+  fs.mkdirSync(path.join(wt, ".claude", "agents"), { recursive: true });
+  fs.writeFileSync(path.join(wt, ".claude", "agents", "agente-com-edit.md"),
+    "---\nname: agente-com-edit\ndescription: agente de teste fora do manifesto\ntools: Read, Edit\n---\n\nCorpo de teste.\n",
+    "utf8");
+
+  const r = despachar(repo, wt, "agente-com-edit", { semIsolation: true });
+  caso("N2 agente fora do manifesto com tools Read, Edit no frontmatter, sem isolation: barra exit 2",
+    r.status === 2 && /agente-com-edit/.test(r.stderr || "") && /tratado como escritor/.test(r.stderr || ""),
+    `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // N3: o caso N1 em repo de trilho protheus, com `docs/plans/x.gates.json` de ha 2 dias (plano fechado).
+  const repo = novoRepo();
+  const plans = path.join(repo.main, "docs", "plans");
+  fs.mkdirSync(plans, { recursive: true });
+  const gates = path.join(plans, "2026-10-08-teste.gates.json");
+  fs.writeFileSync(gates, "{}\n", "utf8");
+  const doisDias = (Date.now() - 2 * 24 * 3600 * 1000) / 1000;
+  fs.utimesSync(gates, doisDias, doisDias);
+
+  const r = despachar(repo, repo.main, "outro-plugin:agente-solto");
+  caso("N3 nao declarado com isolation, trilho protheus sem plano aberto: barra exit 2",
+    r.status === 2, `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // N4: `Explore` sem isolation, trilho rainforest sem fluxo: passa.
+  const repo = novoRepo();
+  const wt = comWorktree(repo);
+
+  const r = despachar(repo, wt, "Explore", { semIsolation: true });
+  caso("N4 Explore sem isolation, sem fluxo aberto: passa exit 0",
+    r.status === 0, `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // N5: o caso N1 com `leve` gravado pelo estado.cjs real na branch fluxo/x.
+  const repo = novoRepo();
+  const wt = worktreeX(repo);
+  const leve = estado(repo, wt, ["leve", "--motivo", "hotfix mecanico de teste"]);
+  caso("N5 estado.cjs leve grava o registro na fluxo/x",
+    leve.status === 0, `exit=${leve.status} stdout=${leve.stdout} stderr=${leve.stderr}`);
+
+  const r = despachar(repo, wt, "outro-plugin:agente-solto");
+  caso("N5 nao declarado com isolation e leve na branch: passa exit 0",
+    r.status === 0, `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // N6: o caso N1 com o fluxo da branch (fluxo/teste) com o estagio executar aberto.
+  const repo = novoRepo();
+  const wt = comWorktree(repo);
+  const erro = fluxoAberto(repo, wt, "executar");
+  caso("N6 fluxo levado a executar pelo estado.cjs real",
+    erro === null, erro);
+
+  const r = despachar(repo, wt, "outro-plugin:agente-solto");
+  caso("N6 nao declarado com isolation e fluxo em executar: passa exit 0",
+    r.status === 0, `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // N7: o caso N1 em repositorio sem trilho de fluxo nenhum: passa.
+  const repo = novoRepo();
+
+  const r = despachar(repo, repo.main, "outro-plugin:agente-solto");
+  caso("N7 nao declarado com isolation em repo sem trilho: passa exit 0",
+    r.status === 0, `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // N8: o caso N1 com `.rainforest/config.json` do repo com `aviso-fluxo: false`: passa.
+  const repo = novoRepo();
+  const wt = worktreeX(repo);
+  fs.mkdirSync(path.join(repo.main, ".rainforest"), { recursive: true });
+  fs.writeFileSync(path.join(repo.main, ".rainforest", "config.json"), JSON.stringify({ "aviso-fluxo": false }) + "\n", "utf8");
+
+  const r = despachar(repo, wt, "outro-plugin:agente-solto");
+  caso("N8 nao declarado com isolation com aviso-fluxo desligado no projeto: passa exit 0",
+    r.status === 0, `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // N9: agente nao declarado com frontmatter SEM `tools:` (herda tudo), sem isolation, repo git SEM trilho:
+  // a inferencia sem `tools:` nao aciona a regra 11, entao passa exit 0.
+  const repo = novoRepo();
+  fs.mkdirSync(path.join(repo.main, ".claude", "agents"), { recursive: true });
+  fs.writeFileSync(path.join(repo.main, ".claude", "agents", "agente-sem-tools-solto.md"),
+    "---\nname: agente-sem-tools-solto\ndescription: agente de teste sem linha tools\n---\n\nCorpo de teste.\n",
+    "utf8");
+
+  const r = despachar(repo, repo.main, "agente-sem-tools-solto", { semIsolation: true });
+  caso("N9 nao declarado com frontmatter sem tools:, sem isolation, repo sem trilho: passa exit 0",
+    r.status === 0, `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // N10: agente nao declarado com `tools: Read, Edit` (tool de escrita listada), sem isolation, repo sem trilho:
+  // a regra 11 barra com a mensagem de tool de escrita, e nao com a de `escreve: true` declarado.
+  const repo = novoRepo();
+  fs.mkdirSync(path.join(repo.main, ".claude", "agents"), { recursive: true });
+  fs.writeFileSync(path.join(repo.main, ".claude", "agents", "agente-com-edit-solto.md"),
+    "---\nname: agente-com-edit-solto\ndescription: agente de teste com tool de escrita\ntools: Read, Edit\n---\n\nCorpo de teste.\n",
+    "utf8");
+
+  const r = despachar(repo, repo.main, "agente-com-edit-solto", { semIsolation: true });
+  caso("N10 nao declarado com tools Read, Edit, sem isolation, repo sem trilho: barra exit 2 com 'tem tool de escrita no frontmatter'",
+    r.status === 2 && /tem tool de escrita no frontmatter/.test(r.stderr || "") && !/declara 'escreve: true'/.test(r.stderr || ""),
+    `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+
+{
+  // N11: o N9 em repo COM trilho e estagio executar aberto: a dispensa de isolamento so vale sem trilho,
+  // entao a regra 11 barra (exit 2).
+  const repo = novoRepo();
+  const wt = comWorktree(repo);
+  const erro = fluxoAberto(repo, wt, "executar");
+  for (const raiz of [repo.main, wt]) {
+    fs.mkdirSync(path.join(raiz, ".claude", "agents"), { recursive: true });
+    fs.writeFileSync(path.join(raiz, ".claude", "agents", "agente-sem-tools-solto.md"),
+      ["---", "name: agente-sem-tools-solto", "description: agente de teste sem linha tools", "---", "", "Corpo de teste.", ""].join("\n"), "utf8");
+  }
+
+  const r = despachar(repo, wt, "agente-sem-tools-solto", { semIsolation: true });
+  caso("N11 nao declarado sem tools:, sem isolation, repo com trilho e executar aberto: barra exit 2 pela regra 11",
+    erro === null && r.status === 2 && /regra 11/.test(r.stderr || "") && /herda todas as tools/.test(r.stderr || ""),
+    `erro=${erro} exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+
+{
+  // N12: o N9 (sem tools:, repo sem trilho) despachado com `name`: a dispensa e so do isolamento,
+  // a regra 10 barra (exit 2).
+  const repo = novoRepo();
+  fs.mkdirSync(path.join(repo.main, ".claude", "agents"), { recursive: true });
+  fs.writeFileSync(path.join(repo.main, ".claude", "agents", "agente-sem-tools-solto.md"),
+    ["---", "name: agente-sem-tools-solto", "description: agente de teste sem linha tools", "---", "", "Corpo de teste.", ""].join(String.fromCharCode(10)), "utf8");
+
+  const r = despachar(repo, repo.main, "agente-sem-tools-solto", { semIsolation: true, nome: "fulano" });
+  caso("N12 nao declarado sem tools:, repo sem trilho, com name: barra exit 2 pela regra 10",
+    r.status === 2 && /regra 10/.test(r.stderr || ""), `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+
+// == G D3. agente declarado com escreve: false e nao declarado com sinal de escrita (emenda D3, 2026-10-28) ==
+// Os nomes G1 D3..G6 D3 nao colidem com os G1..G3 do trilho protheus acima.
+console.log("== G D3. escreve: false declarado com isolation, e nao declarado com sinal de escrita ==");
+{
+  // G1 D3: general-purpose (escreve: false no manifesto) com isolation, trilho rainforest, branch fluxo/x sem fluxo aberto.
+  const repo = novoRepo();
+  const wt = worktreeX(repo);
+
+  const r = despachar(repo, wt, "general-purpose");
+  caso("G1 D3 general-purpose com isolation, sem fluxo na fluxo/x: barra exit 2",
+    r.status === 2 && /declarado com escreve: false/.test(r.stderr || "") && /isolation: "worktree"/.test(r.stderr || ""),
+    `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // G2 D3: Explore (escreve: false no manifesto) com isolation, mesmo cenario.
+  const repo = novoRepo();
+  const wt = worktreeX(repo);
+
+  const r = despachar(repo, wt, "Explore");
+  caso("G2 D3 Explore com isolation, sem fluxo na fluxo/x: barra exit 2",
+    r.status === 2 && /declarado com escreve: false/.test(r.stderr || ""),
+    `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // G3 D3: agente nao declarado, arquivo em .claude/agents/ com frontmatter SEM linha `tools:`, com isolation, sem fluxo.
+  const repo = novoRepo();
+  const wt = worktreeX(repo);
+  fs.mkdirSync(path.join(wt, ".claude", "agents"), { recursive: true });
+  fs.writeFileSync(path.join(wt, ".claude", "agents", "agente-sem-tools.md"),
+    "---\nname: agente-sem-tools\ndescription: agente de teste sem linha tools\n---\n\nCorpo de teste.\n",
+    "utf8");
+
+  const r = despachar(repo, wt, "agente-sem-tools");
+  caso("G3 D3 agente nao declarado com frontmatter sem tools:, com isolation, sem fluxo: barra exit 2",
+    r.status === 2 && /frontmatter sem `tools:`/.test(r.stderr || ""),
+    `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // G4 D3: general-purpose SEM isolation, sem fluxo: passa (a barreira so pega quem escreve).
+  const repo = novoRepo();
+  const wt = worktreeX(repo);
+
+  const r = despachar(repo, wt, "general-purpose", { semIsolation: true });
+  caso("G4 D3 general-purpose sem isolation, sem fluxo: passa exit 0",
+    r.status === 0, `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // G5 D3: general-purpose com isolation e o fluxo da branch levado a executar pelo estado.cjs real: passa.
+  const repo = novoRepo();
+  const wt = comWorktree(repo);
+  const erro = fluxoAberto(repo, wt, "executar");
+  caso("G5 D3 fluxo levado a executar pelo estado.cjs real",
+    erro === null, erro);
+
+  const r = despachar(repo, wt, "general-purpose");
+  caso("G5 D3 general-purpose com isolation e fluxo em executar: passa exit 0",
+    r.status === 0, `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
+}
+{
+  // G6 D3: rainforest-mind:revisor (escreve: false) sem isolation, sem fluxo: passa.
+  const repo = novoRepo();
+  const wt = worktreeX(repo);
+
+  const r = despachar(repo, wt, "rainforest-mind:revisor", { semIsolation: true });
+  caso("G6 D3 rainforest-mind:revisor sem isolation, sem fluxo: passa exit 0",
+    r.status === 0, `exit=${r.status} stderr=${r.stderr}`);
+
+  descartar(repo);
 }
 
 console.log("");

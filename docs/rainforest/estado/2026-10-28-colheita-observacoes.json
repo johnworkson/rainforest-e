@@ -1,0 +1,267 @@
+{
+  "slug": "2026-10-28-colheita-observacoes",
+  "titulo": "Colheita das observacoes: classes recorrentes viram trava mecanica",
+  "criado_em": "2026-10-28",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-28-colheita-observacoes.md",
+    "em": "2026-10-28"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-28-colheita-observacoes.md",
+    "tarefas": 10,
+    "paralelas": [
+      7,
+      8,
+      9
+    ],
+    "em": "2026-10-28"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-28",
+    "em_voo": [],
+    "carimbos": [
+      {
+        "tarefa": 1,
+        "hash_base": "6ef20f6ccb008be4cf51f4008fb553ac47262547",
+        "iteracao": 1,
+        "sessao": "184770db-2116-48c8-acbd-618fc0867f9f",
+        "ts": "2026-10-28T18:50:05.639Z"
+      },
+      {
+        "tarefa": 2,
+        "hash_base": "6ef20f6ccb008be4cf51f4008fb553ac47262547",
+        "iteracao": 1,
+        "sessao": "184770db-2116-48c8-acbd-618fc0867f9f",
+        "ts": "2026-10-28T18:50:05.639Z"
+      },
+      {
+        "tarefa": 3,
+        "hash_base": "6ef20f6ccb008be4cf51f4008fb553ac47262547",
+        "iteracao": 1,
+        "sessao": "184770db-2116-48c8-acbd-618fc0867f9f",
+        "ts": "2026-10-28T18:50:05.639Z"
+      },
+      {
+        "tarefa": 7,
+        "hash_base": "e63d3f08386357eaaab76b4ad8e32ec592753f37",
+        "iteracao": 1,
+        "sessao": "184770db-2116-48c8-acbd-618fc0867f9f",
+        "ts": "2026-10-28T20:19:35.104Z"
+      },
+      {
+        "tarefa": 8,
+        "hash_base": "e63d3f08386357eaaab76b4ad8e32ec592753f37",
+        "iteracao": 1,
+        "sessao": "184770db-2116-48c8-acbd-618fc0867f9f",
+        "ts": "2026-10-28T20:19:35.104Z"
+      },
+      {
+        "tarefa": 11,
+        "hash_base": "c9e8b2d8",
+        "iteracao": 1,
+        "sessao": "184770db-2116-48c8-acbd-618fc0867f9f",
+        "ts": "2026-10-28T21:02:14.355Z"
+      },
+      {
+        "tarefa": 12,
+        "hash_base": "c9e8b2d8",
+        "iteracao": 1,
+        "sessao": "184770db-2116-48c8-acbd-618fc0867f9f",
+        "ts": "2026-10-28T21:02:14.355Z"
+      },
+      {
+        "tarefa": 13,
+        "hash_base": "c9e8b2d8",
+        "iteracao": 1,
+        "sessao": "184770db-2116-48c8-acbd-618fc0867f9f",
+        "ts": "2026-10-28T21:02:14.355Z"
+      }
+    ],
+    "em": "2026-10-28",
+    "tarefas_ok": 13,
+    "tarefas": 13,
+    "comando": "node scripts/conferir-mutacao.cjs (tarefa 11 com o caso N12 da revisao 3)",
+    "saida": "catraca exit 0: N12 vermelho com a regra 10 dispensada",
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "vermelho",
+        "fixture": "testa-portaria-fluxo-pulado.cjs N1, N2, N3"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-turno-prometido.cjs C1, C2, C3"
+      },
+      {
+        "tarefa": 3,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-pergunta-memoria.cjs P1, P2"
+      },
+      {
+        "tarefa": 4,
+        "resultado": "n/a",
+        "motivo": "rascunho de texto fora do repo"
+      },
+      {
+        "tarefa": 5,
+        "resultado": "n/a",
+        "motivo": "dados do usuario gravados pelo ideias.cjs colher"
+      },
+      {
+        "tarefa": 6,
+        "resultado": "n/a",
+        "motivo": "doc e versao"
+      },
+      {
+        "tarefa": 7,
+        "resultado": "vermelho",
+        "fixture": "testa-portaria-fluxo-pulado.cjs G1 D3, G2 D3"
+      },
+      {
+        "tarefa": 8,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-pergunta-memoria.cjs P10"
+      },
+      {
+        "tarefa": 9,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-turno-prometido.cjs C10, C11, C12"
+      },
+      {
+        "tarefa": 10,
+        "resultado": "n/a",
+        "motivo": "doc"
+      },
+      {
+        "tarefa": 11,
+        "resultado": "vermelho",
+        "fixture": "testa-portaria-fluxo-pulado.cjs N9 (N11 e N12 nas mutacoes vizinhas)"
+      },
+      {
+        "tarefa": 12,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-pergunta-memoria.cjs P14"
+      },
+      {
+        "tarefa": 13,
+        "resultado": "vermelho",
+        "fixture": "testa-gate-turno-prometido.cjs C13"
+      }
+    ],
+    "reaberturas": 1
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "5b2354d4ed9671fc335b7a9e6f14b19a92516e75",
+      "caminhos_sujos": []
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a68909cc885fd1fa2",
+        "veredito": "ok",
+        "em": "2026-10-28",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/184770db-2116-48c8-acbd-618fc0867f9f/subagents/agent-a68909cc885fd1fa2.jsonl"
+      }
+    ],
+    "em_voo": [],
+    "em": "2026-10-28",
+    "achados": 0,
+    "design": 2,
+    "voltas": [
+      {
+        "volta": 1,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a1dbd23c4cd63da6e",
+            "veredito": "reprovado",
+            "em": "2026-10-28",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/184770db-2116-48c8-acbd-618fc0867f9f/subagents/agent-a1dbd23c4cd63da6e.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 2,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a339595a1adde0e2a",
+            "veredito": "ok",
+            "em": "2026-10-28",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/184770db-2116-48c8-acbd-618fc0867f9f/subagents/agent-a339595a1adde0e2a.jsonl"
+          }
+        ]
+      },
+      {
+        "volta": 3,
+        "vereditos": [
+          {
+            "agente": "rainforest-mind:revisor",
+            "agente_id": "a324ccc92999327c2",
+            "veredito": "ok",
+            "em": "2026-10-28",
+            "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/184770db-2116-48c8-acbd-618fc0867f9f/subagents/agent-a324ccc92999327c2.jsonl"
+          }
+        ]
+      }
+    ],
+    "base": "db7f22101e8541de3674a866626d8a681742dfba",
+    "head": "5b2354d4ed9671fc335b7a9e6f14b19a92516e75"
+  },
+  "verificar": {
+    "status": "ok",
+    "em": "2026-10-28",
+    "comando": "node scripts/conferir-categoria.cjs; node hooks/testa-portaria-fluxo-pulado.cjs; node hooks/testa-gate-turno-prometido.cjs; node hooks/testa-gate-pergunta-memoria.cjs; bash hooks/testa-titulo-sessao-registro.sh; bash scripts/testa-conferir-categoria.sh; bash scripts/testa-conferir-setup.sh; bash scripts/testa-conferir-versao.sh; 13 hooks/testa-portaria-*.cjs; node hooks/testa-aviso-fluxo.cjs; bash hooks/testa-config.sh; node -e (T4 rascunho, T5 colheita, T6 versao)",
+    "saida": "todas exit 0: fluxo-pulado ok 97 falhou 0; turno-prometido ok 45 falhou 0; pergunta-memoria ok 18 falhou 0; titulo-sessao 3 ok; conferir-categoria 14 ok; conferir-setup 10 ok; conferir-versao 38 ok; portaria manifesto 62, nucleo 92, autorizacao 110, captura 14, diagnostico 29, folha 12, fora-de-repo 22, gitignore 10, lint 31, log 8, portoes exit 0, tools-bloco 23; aviso-fluxo 10 ok; config 74 ok. T4: 9 ids, 9 existem. T5: colhidas 120/120, D 40, memoria 40 (40 existem), avulsas 40; listar mostra 1 plantada nova (obs-2026-10-28-patch-producao-aiba-e-do-arthur, protheus-clientes) plantada depois da triagem e fora da lista inicial. T6: 2.1.0 em plugin.json, selo do README e CHANGELOG.",
+    "sensor_externo": "node hooks/testa-portaria-fluxo-pulado.cjs",
+    "head": "5b2354d4ed9671fc335b7a9e6f14b19a92516e75"
+  },
+  "fechar": {
+    "status": "pendente",
+    "em": "2026-10-28"
+  },
+  "reaberturas": [
+    {
+      "em": "2026-10-28",
+      "de": "revisar",
+      "motivo": "revisao 2 aprovou com 4 achados que cabem no PR: falso positivo de 24% no gate-pergunta-memoria (limiar e Q<n> em prosa), trecho '---' do banco, inferencia sem tools: barrando repo sem trilho pela regra 11, backtracking exponencial na regex do fecho"
+    },
+    {
+      "em": "2026-10-28",
+      "de": "revisar",
+      "motivo": "revisao 3 aprovou com 4 achados baixos: README/CHANGELOG mais largos que o codigo sobre a regra 11 sem tools: (corrigir), regra 10 sem caso para agente sem tools: (N12); marcador sem ## / 1. / bullet e filtro de projeto depois do corte do banco viram ideia"
+    }
+  ],
+  "decididos": [
+    {
+      "pergunta": "achado 3: inferencia de frontmatter sem tools: barra pela regra 11 em repo sem trilho",
+      "escolha": "a inferencia vale so para o fluxo pulado (D3); a regra 11 segue exigindo isolation so de quem declara escreve:true ou tem tool de escrita listada",
+      "porque": "o plano tem como invariante que repo sem trilho nao e barrado, e o D3 descreve a inferencia como sinal para o fluxo pulado",
+      "estagio": "executar",
+      "em": "2026-10-28T20:59:58.902Z"
+    },
+    {
+      "pergunta": "achado 1: 24% de bloqueio no gate-pergunta-memoria",
+      "escolha": "so conta Q<n> que abre linha e termina em ?; termos do vocabulario do projeto (regra, fluxo, worktree, agente, plano, entrega, codex, claude etc.) nao contam; limiar segue 3",
+      "porque": "os falsos positivos medidos vem de recap em prosa e de palavras comuns do projeto, nao do limiar em si",
+      "estagio": "executar",
+      "em": "2026-10-28T20:59:59.012Z"
+    },
+    {
+      "pergunta": "achado 2: banco devolve observacao de outro projeto e trecho ---",
+      "escolha": "o banco so conta observacao do projeto atual e o trecho pula linha de --- e cabecalho",
+      "porque": "o acerto medido era de outro projeto sem relacao, e trecho vazio nao deixa conferir nada",
+      "estagio": "executar",
+      "em": "2026-10-28T21:02:00.850Z"
+    }
+  ]
+}
