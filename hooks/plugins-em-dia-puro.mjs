@@ -4,7 +4,7 @@
 // (`agoraMs`, em ms), nunca por leitura. Quem le o installed_plugins.json e quem roda o
 // claude fica fora daqui.
 
-export const LISTA_PADRAO = ['rainforest-mind@rainforest-mind'];
+export const LISTA_PADRAO = ['rainforest-mind@rainforest-e'];
 // Periodo entre uma checagem automatica e a seguinte (3 h).
 export const PERIODO_MS = 10800000;
 // Varias janelas abrem juntas; so uma roda o update dentro desta janela (30 min).

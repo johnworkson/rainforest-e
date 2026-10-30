@@ -75,7 +75,7 @@ const igual = (a, b, msg) => {
 
 caso("constantes: lista padrao, periodo de 3 h e intervalo minimo de 30 min", async () => {
   const P = await importar(PURO);
-  igual(P.LISTA_PADRAO, [RAIZ], "LISTA_PADRAO");
+  igual(P.LISTA_PADRAO, ["rainforest-mind@rainforest-e"], "LISTA_PADRAO");
   igual(P.PERIODO_MS, 10800000, "PERIODO_MS");
   igual(P.INTERVALO_MINIMO_MS, 1800000, "INTERVALO_MINIMO_MS");
 });

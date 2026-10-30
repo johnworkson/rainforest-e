@@ -36,7 +36,7 @@ command -v node >/dev/null 2>&1 || exit 0
 # `cd ~ && pwd` e nao `$USERPROFILE`: o glob precisa da forma POSIX
 # (`/c/Users/<nome>`), e `$USERPROFILE` chega em forma Windows. Mesmo idioma do
 # `scripts/instalar-statusline.sh`.
-CACHE_ROOT="${RAINFOREST_STATUSLINE_CACHE:-$(cd ~ 2>/dev/null && pwd || echo "$HOME")/.claude*/plugins/cache/rainforest-mind/rainforest-mind}"
+CACHE_ROOT="${RAINFOREST_STATUSLINE_CACHE:-$(cd ~ 2>/dev/null && pwd || echo "$HOME")/.claude*/plugins/cache/rainforest-e/rainforest-mind}"
 SCRIPT=$(ls -1t $CACHE_ROOT/*/scripts/jornada.cjs 2>/dev/null | head -1)
 [ -n "$SCRIPT" ] || exit 0
 

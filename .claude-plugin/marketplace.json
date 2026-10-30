@@ -1,6 +1,8 @@
 {
-  "name": "rainforest-mind",
-  "owner": { "name": "Luís Montes" },
+  "name": "rainforest-e",
+  "owner": {
+    "name": "Erick Maria"
+  },
   "plugins": [
     {
       "name": "rainforest-mind",

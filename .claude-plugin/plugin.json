@@ -13,7 +13,7 @@
       "title": "Plugins a manter em dia",
       "description": "Ids nome@marketplace que o /plugins-em-dia atualiza na sessão (só os instalados no escopo user)",
       "multiple": true,
-      "default": ["rainforest-mind@rainforest-mind"]
+      "default": ["rainforest-mind@rainforest-e"]
     },
     "recarregarSozinho": {
       "type": "boolean",
@@ -22,5 +22,5 @@
       "default": false
     }
   },
-  "homepage": "https://github.com/luisfmontes/rainforest-mind"
+  "homepage": "https://github.com/johnworkson/rainforest-e"
 }
