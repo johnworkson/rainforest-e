@@ -276,7 +276,9 @@ async function montar($: any, on: any, surface: Surface, inicio: number, comUi =
   }
   if (comUi) await abrir()
   // O pane do /painel monta no lugar da barra (cada teste usa um ou outro).
+  // Fork rainforest-e: o pane padrao e enxuto; os casos daqui provam os quadros todos.
   const abrirPane = async (props: Record<string, unknown> = {}) => {
+    await $.command.run({ command: 'painel', args: 'completo' } as never)
     ui = await $.ui.mount({ plugin: 'rainforest-mind', surface, component: 'Pane', requestId: 'painel', props: { ...PANE_PROPS, ...props } })
     return ui
   }
@@ -686,6 +688,19 @@ for (const surface of ['terminal', 'desktop'] as const) {
       expect(t).toContain('1')
     })
 
+    await caso(`pane (${surface}): enxuto mostra so o Deixado para depois e completo traz o resto de volta`, async () => {
+      expect((await painel('enxuto')).text).toBe('Painel só com o Deixado para depois.')
+      await m.ui.redraw(PANE_PROPS)
+      const t = await textos()
+      expect(t).toContain(' Deixado para depois ')
+      for (const quadro of [' Fluxos em curso ', ' Mapa da sessão ', ' Onde foi o contexto ', ' Cache de prompt ', ' Subagentes ', ' Custo e tokens ']) {
+        expect(t).not.toContain(quadro)
+      }
+      expect((await painel('completo')).text).toBe('Painel com todos os quadros.')
+      await m.ui.redraw(PANE_PROPS)
+      expect(await textos()).toContain(' Custo e tokens ')
+    })
+
     await caso(`pane (${surface}): com view.agentId o pane e o do subagente e diz que contexto e cache sao da principal`, async () => {
       await m.ui.redraw({ ...PANE_PROPS, view: { agentId: 'ag-1' } })
       const t = await juntos()
@@ -700,6 +715,17 @@ for (const surface of ['terminal', 'desktop'] as const) {
     })
 
     await m.ui.unmount()
+  })
+
+  test(`painel (${surface}): sem /painel completo o pane abre so com o Deixado para depois`, async ($, on) => {
+    const m = await montar($, on, surface, em(20, 40), false)
+    await m.comecar()
+    const ui = await $.ui.mount({ plugin: 'rainforest-mind', surface, component: 'Pane', requestId: 'painel', props: PANE_PROPS })
+    const t = (await ui.findAll({ type: 'Text' })).map((x: any) => x.text as string)
+    expect(t).toContain(' Deixado para depois ')
+    expect(t).not.toContain(' Fluxos em curso ')
+    expect(t).not.toContain(' Custo e tokens ')
+    await ui.unmount()
   })
 
   test(`painel (${surface}): mapa da sessao, desvio do plano e um toast por arquivo`, async ($, on) => {

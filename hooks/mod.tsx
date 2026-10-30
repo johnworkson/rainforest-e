@@ -63,6 +63,8 @@ const VAZIO: RainforestMindPainelStats = {
 const faixaDados = atom({ plugin: 'rainforest-mind', key: 'faixaDados' } as const, null as RainforestMindFaixaDados | null)
 const painelStats = atom({ plugin: 'rainforest-mind', key: 'painelStats' } as const, VAZIO)
 const painelOculto = atom({ plugin: 'rainforest-mind', key: 'painelOculto' } as const, false)
+// Fork rainforest-e: o pane abre so com o Deixado para depois; /painel completo traz o resto.
+const painelCompleto = atom({ plugin: 'rainforest-mind', key: 'painelCompleto' } as const, false)
 const painelMapa = atom({ plugin: 'rainforest-mind', key: 'painelMapa' } as const, mapaVazio() as RainforestMindPainelMapa)
 const relogioJornada = atom({ plugin: 'rainforest-mind', key: 'relogioJornada' } as const, null as RainforestMindRelogioJornada | null)
 const relogioSessoes = atom({ plugin: 'rainforest-mind', key: 'relogioSessoes' } as const, null as RainforestMindRelogioSessoes | null)
@@ -274,7 +276,7 @@ const AGENTES_NO_PANE = 6
 // O slug do fluxo comeca pela data de criacao; no pane so o nome conta.
 const slugSemData = (slug: string): string => slug.replace(/^\d{4}-\d{2}-\d{2}-/, '')
 
-const AJUDA = 'Subcomandos: esconder, mostrar, cache 5m|1h, checar ligar|desligar, limpar, erros [horas]. Sem argumento abre o painel.'
+const AJUDA = 'Subcomandos: esconder, mostrar, completo, enxuto, cache 5m|1h, checar ligar|desligar, limpar, erros [horas]. Sem argumento abre o painel.'
 // Ate tantas escritas esperam a vez do script do desvio; as demais entram no mapa sem veredito.
 const FILA_DESVIO_MAX = 50
 const VEREDITOS_DEFINITIVOS = new Set(['dentro', 'fora', 'isento'])
@@ -548,6 +550,10 @@ export const register: Register = (on, options) => {
     if (palavra === 'esconder' || palavra === 'mostrar') {
       await update($, painelOculto, () => palavra === 'esconder')
       return { text: palavra === 'esconder' ? 'Barra escondida.' : 'Barra de volta.' }
+    }
+    if (palavra === 'completo' || palavra === 'enxuto') {
+      await update($, painelCompleto, () => palavra === 'completo')
+      return { text: palavra === 'completo' ? 'Painel com todos os quadros.' : 'Painel só com o Deixado para depois.' }
     }
     if (palavra === 'cache 5m' || palavra === 'cache 1h') {
       await update($, painelStats, s => ({ ...inteiro(s), ttlMs: palavra === 'cache 5m' ? 5 * MIN : HORA }))
@@ -1211,6 +1217,7 @@ export const register: Register = (on, options) => {
         <Text key="dnota" dimColor>{`Checagem do segundo modelo: ${deixado.checar ? 'ligada' : 'desligada'} (/painel checar ligar|desligar)`}</Text>,
       ])
 
+      if (!(await read($, painelCompleto))) return <Box flexDirection="column">{painelDeixadoTela}</Box>
       const lidos = s.tokensNovos + s.tokensCacheLido + s.tokensCacheEscrito
       const doCache = lidos === 0 ? 0 : Math.round((s.tokensCacheLido / lidos) * 100)
       return (

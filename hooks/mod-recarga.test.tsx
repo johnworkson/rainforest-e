@@ -17,7 +17,7 @@ const registro = (versao: string) =>
   JSON.stringify({
     version: 2,
     plugins: {
-      'rainforest-mind@rainforest-mind': [
+      'rainforest-mind@rainforest-e': [
         { scope: 'user', installPath: `<home>/plugins/cache/rainforest-mind/rainforest-mind/${versao}`, version: versao, installedAt: '2026-08-08T15:56:01.994Z', lastUpdated: '2026-10-09T13:47:15.749Z' },
       ],
     },
@@ -39,7 +39,7 @@ async function montar($: any, on: any, env: Record<string, string> = {}) {
   on('process.run', async (_$: any, e: any) => {
     if (/[\\/]system32[\\/]where\.exe$/i.test(String(e.argv[0]))) return e.argv.includes('claude.cmd') ? saida(`${CLAUDE_CMD}\r\n`) : saida('', 1)
     if (!/[\\/]system32[\\/]cmd\.exe$/i.test(String(e.argv[0]))) return saida('', 1)
-    if (e.argv.includes('update') && e.argv.includes('rainforest-mind@rainforest-mind')) s.versao = '1.54.0'
+    if (e.argv.includes('update') && e.argv.includes('rainforest-mind@rainforest-e')) s.versao = '1.54.0'
     return saida('ok')
   })
   on('command.run', { command: 'reload-plugins' }, async () => {
