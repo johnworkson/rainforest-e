@@ -10,6 +10,11 @@ que existe delas é o commit de release (`git log --grep="^Versao "`), e reescre
 29 releases de memória produziria nota bonita e errada. Versão nova daqui em diante
 entra aqui no mesmo commit que sobe o `version` do `plugin.json`.
 
+## 2.3.1 — 2026-10-30 (fork rainforest-e)
+
+- **`/painel` abre só com o Deixado para depois.** Fluxos em curso, Mapa da sessão, Onde foi o contexto, Cache de prompt, Subagentes e Custo e tokens continuam sendo medidos, mas só aparecem com `/painel completo`; `/painel enxuto` volta ao padrão. Os quadros seguem montados no código para o merge do original não virar conflito.
+- Os testes de engine de `plugins-em-dia` e `recarga` passam a esperar o marketplace `rainforest-e` (estavam com o id do original e falhavam desde a troca de marketplace).
+
 ## 2.3.0 — 2026-10-30
 
 - **Release do GitHub sai sozinha a cada versão nova.** O push do bump do `plugin.json` à `main` dispara `.github/workflows/release.yml`, que chama `scripts/release-da-versao.cjs` e publica `v<versão>` com a seção daquela versão no `CHANGELOG.md` como notas. Release que já existe não é tocada; versão sem seção no CHANGELOG deixa o run vermelho sem criar nada. Até a 2.2.1 o GitHub ficou em `v1.0.0`, porque a release dependia de alguém lembrar; a `v2.2.2` foi publicada à mão com as notas da linha 2.x, e as versões 1.x seguem só no `CHANGELOG.md`.
