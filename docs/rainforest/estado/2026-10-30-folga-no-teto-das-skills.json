@@ -1,0 +1,92 @@
+{
+  "slug": "2026-10-30-folga-no-teto-das-skills",
+  "titulo": "Folga no teto de 16 KB das skills regua, executar, fechar e plano",
+  "criado_em": "2026-10-30",
+  "arqueologia": {
+    "status": "pendente"
+  },
+  "design": {
+    "status": "aprovado",
+    "doc": "docs/rainforest/design/2026-10-30-folga-no-teto-das-skills.md",
+    "em": "2026-10-30"
+  },
+  "plano": {
+    "status": "ok",
+    "arquivo": "docs/rainforest/planos/2026-10-30-folga-no-teto-das-skills.md",
+    "tarefas": 2,
+    "paralelas": [],
+    "em": "2026-10-30"
+  },
+  "executar": {
+    "status": "ok",
+    "catraca_mutacao": "2026-10-30",
+    "tarefas_ok": 2,
+    "tarefas": 2,
+    "comando": "bash scripts/testa-teto-skills.sh; bash scripts/testa-plugin-codex.sh; bash scripts/testa-versao.sh",
+    "saida": "Resultado: 21 OK, 0 FALHA | testa-plugin-codex exit 0 | testa-versao ok: 5 falhou: 0",
+    "mutacao": [
+      {
+        "tarefa": 1,
+        "resultado": "n/a",
+        "motivo": "só move texto entre arquivos da mesma skill; a conferência byte a byte do critério falsifica a entrega"
+      },
+      {
+        "tarefa": 2,
+        "resultado": "n/a",
+        "motivo": "só texto e número de versão"
+      }
+    ],
+    "em": "2026-10-30"
+  },
+  "revisar": {
+    "status": "ok",
+    "snapshot": {
+      "head": "3c66d2aa381cf2743114a3febdbff6f8ffa5838e",
+      "caminhos_sujos": [
+        "scripts/_conferir-movidos.cjs"
+      ]
+    },
+    "vereditos": [
+      {
+        "agente": "rainforest-mind:revisor",
+        "agente_id": "a4907e876b77f882a",
+        "veredito": "ok",
+        "em": "2026-10-30",
+        "transcrito": "~/.claude/projects/C--Projetos-rainforest-mind/4afb8320-f076-402f-8e7d-8f71f64b7cd2/subagents/agent-a4907e876b77f882a.jsonl"
+      }
+    ],
+    "achados": 4,
+    "base": "6169212f",
+    "head": "3c66d2aa",
+    "comando": "revisor: git diff 6169212f..HEAD + 7 baterias",
+    "saida": "VEREDITO: ok — 4 achados baixa, nenhum bloqueia",
+    "em": "2026-10-30"
+  },
+  "verificar": {
+    "status": "ok",
+    "comando": "bash scripts/testa-teto-skills.sh",
+    "saida": "Resultado: 21 OK, 0 FALHA; _conferir-movidos ok x4; testa-versao ok 5; grep CHANGELOG = 4",
+    "sensor_externo": "bash scripts/testa-teto-skills.sh",
+    "em": "2026-10-30",
+    "head": "3c66d2aa381cf2743114a3febdbff6f8ffa5838e"
+  },
+  "fechar": {
+    "status": "pendente"
+  },
+  "decididos": [
+    {
+      "pergunta": "Revisão achado 1: suavizar 'a instrução que a skill dá não muda' no CHANGELOG?",
+      "escolha": "manter",
+      "porque": "o texto da instrução não mudou, só o lugar; o ponteiro do executar diz quando ler a tabela de exits",
+      "estagio": "revisar",
+      "em": "2026-10-30T10:42:32.375Z"
+    },
+    {
+      "pergunta": "Revisão achados 2 e 3: ponteiro da regua sem a proveniência; critério histórico fluxo-13 cita a seção antiga",
+      "escolha": "aceitar os dois",
+      "porque": "o crédito segue no README; documento histórico não se reescreve",
+      "estagio": "revisar",
+      "em": "2026-10-30T10:42:32.473Z"
+    }
+  ]
+}
