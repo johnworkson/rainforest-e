@@ -486,6 +486,37 @@ tem "a entrada recem-escrita (a mais recente por data) fica no FOCO.md" "$FOCO21
 nao_tem "a entrada recem-escrita NAO foi para o historico" "$HIST21" "avanco recem chegado"
 tem "a mais antiga do cenario original foi rotacionada pra fora (rotacionar rodou)" "$HIST21" "- 2026-08-23: mais antiga"
 
+echo; echo "22. avanco com entradas de data em NEGRITO (- **2026-...) e CRLF: grava, nao gruda na entrada seguinte"
+# O FOCO.md real escrito a mao usa "- **2026-09-14 — titulo.** prosa..." em varias linhas,
+# com CRLF. A fronteira de entrada so aceitava "- 2026-": a entrada nova grudava no bloco
+# inteiro e a conferencia recusava TODA entrada (exit 1, nada gravado).
+rm -rf "$SBP/dados"; mkdir -p "$SBP/dados"
+node -e '
+  const fs = require("fs");
+  const foco = [
+    "# Foco", "", "## Ativo", "",
+    "**Trabalho de teste** `[trabalho]` — declarado 2026-08-01.", "",
+    "Avanços:", "",
+    "- **2026-09-14 — negrito mais nova.** primeira linha",
+    "  continuacao da prosa", "",
+    "  1. item interno da entrada", "",
+    "- **2026-09-10 — negrito mais velha.** so uma linha", "",
+    "## Frentes", "", "- frente preservada", "",
+  ].join("\r\n");
+  fs.writeFileSync(process.argv[1] + "/FOCO.md", foco, "utf8");
+' "$SBP/dados"
+SAIDA="$(node "$SRC/scripts/foco.cjs" avanco "avanco sobre negrito" --aplicar --raiz "$SBP/dados" 2>&1)"; CODIGO=$?
+igual "sai 0" "$CODIGO" "0"
+nao_tem "sem erro de conferencia" "$SAIDA" "conferência falhou"
+FOCO22="$(cat "$SBP/dados/FOCO.md")"
+tem "a entrada nova esta no FOCO.md" "$FOCO22" "avanco sobre negrito"
+tem "a entrada em negrito mais nova ficou" "$FOCO22" "- **2026-09-14 — negrito mais nova.**"
+tem "o item interno dela ficou" "$FOCO22" "1. item interno da entrada"
+tem "a entrada em negrito mais velha ficou" "$FOCO22" "- **2026-09-10 — negrito mais velha.**"
+tem "o resto do arquivo ficou" "$FOCO22" "- frente preservada"
+igual "a entrada nova e a primeira do bloco" "$(grep -A2 '^Avanços:' "$SBP/dados/FOCO.md" | tr -d '\r' | grep -m1 '^- ' | sed 's/^- [0-9-]*: //')" "avanco sobre negrito"
+igual "nenhuma linha ficou so com LF (o arquivo era CRLF)" "$(grep -c -v $'\r$' "$SBP/dados/FOCO.md")" "0"
+
 # ============================================================================
 # Issue #74 — `separar`: FOCO.md monolitico -> FOCO.md (tatico) + ESTRATEGIA.md
 # ============================================================================

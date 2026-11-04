@@ -1,0 +1,9 @@
+{
+  "slug": "2026-11-04-barra-feedback-foco",
+  "titulo": "fix/barra-feedback-foco",
+  "criado_em": "2026-11-04",
+  "leve": {
+    "motivo": "hotfix mecanico 2.3.2 do fork: regex de data em negrito no foco avanco, barra AbovePrompt escondida por padrao, /feedback aponta para o fork",
+    "data": "2026-11-04"
+  }
+}

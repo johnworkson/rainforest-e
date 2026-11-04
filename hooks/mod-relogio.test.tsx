@@ -138,6 +138,8 @@ async function montar($: any, on: any, surface: Surface, inicio: number, dadosFa
     return <Box />
   })
 
+  // Fork rainforest-e (2.3.2): a barra nasce escondida; os casos daqui provam a barra.
+  await $.command.run({ command: 'painel', args: 'mostrar' } as never)
   const ui = await $.ui.mount({ plugin: 'rainforest-mind', surface, component: 'AbovePrompt', props: PROPS })
   const todos = async () => (await ui.findAll({ type: 'Text' })).map((t: any) => t.text as string)
   const textos = async () => {

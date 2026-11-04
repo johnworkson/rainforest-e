@@ -116,8 +116,11 @@ const MARCADOR = '\nAvanços:';
 // ACIMA de um ponteiro já existente — sem esta fronteira, a linha do ponteiro
 // gruda na entrada anterior (nada aqui detectava o início dela sozinha) e o
 // re-parse enxerga UMA peça só onde deveriam ser duas.
-const ENTRADA_DATADA = /\n(?=- \d{4}-\d{2}-\d{2}|- \(histórico:)/;
-const DATA_DA_ENTRADA = /^- (\d{4}-\d{2}-\d{2})/;
+// A data pode vir em negrito (`- **2026-09-14 — título.**`), o formato das entradas
+// escritas à mão: sem o `(?:\*\*)?` a entrada nova grudava no bloco inteiro e a
+// conferência de `avanco` recusava toda entrada.
+const ENTRADA_DATADA = /\n(?=- (?:\*\*)?\d{4}-\d{2}-\d{2}|- \(histórico:)/;
+const DATA_DA_ENTRADA = /^- (?:\*\*)?(\d{4}-\d{2}-\d{2})/;
 
 /** Linha gerada por este script. É reconhecida (e reescrita) a cada rodada. */
 const PONTEIRO = /^- \(histórico:.*\)$/;
@@ -273,6 +276,11 @@ function montarPonteiro(entradasNoHistorico) {
 
 /** Escrita atômica: tmp no mesmo diretório + rename. */
 function gravar(alvo, conteudo) {
+  // Arquivo que já existe em CRLF continua em CRLF: as peças novas são montadas com
+  // `\n` e, sem isto, o arquivo sairia com fim de linha misto.
+  if (fs.existsSync(alvo) && fs.readFileSync(alvo, 'utf8').includes('\r\n')) {
+    conteudo = conteudo.replace(/\r?\n/g, '\r\n');
+  }
   const tmp = `${alvo}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, conteudo, 'utf8');
   fs.renameSync(tmp, alvo);

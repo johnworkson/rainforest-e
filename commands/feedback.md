@@ -15,7 +15,7 @@ sobre quem pode consertar.
 
 | O achado é sobre | Vai para | Por quê |
 |---|---|---|
-| **o plugin** — regra que não disparou, gate que barrou errado, skill que fez besteira, script que mentiu | **Issue** em `luisfmontes/rainforest-mind` | é o único canal que chega em quem mantém o plugin |
+| **o plugin** — regra que não disparou, gate que barrou errado, skill que fez besteira, script que mentiu | **Issue** em `johnworkson/rainforest-e` (o fork; nada vai ao original `luisfmontes/rainforest-mind`) | é quem mantém esta versão do plugin |
 | **o seu trabalho** — bug do seu projeto, agente que errou numa task daquele repo, processo da sua equipe | **markdown** em `<seu-repo>/relatorios/` | é assunto do seu projeto, e o acervo é seu |
 
 **Por que o Issue existe.** Enquanto o `/feedback` só gravava markdown, o
@@ -108,7 +108,7 @@ fica no índice de busca mesmo depois de editado.
 triagem alheia:
 
 ```
-gh issue list --repo luisfmontes/rainforest-mind --state all --search "<termos do achado>"
+gh issue list --repo johnworkson/rainforest-e --state all --search "<termos do achado>"
 ```
 
 Se existir, comente no Issue existente com a evidência nova em vez de abrir
@@ -121,7 +121,7 @@ não tem "desfazer" que apague o que já foi indexado.
 **Então publique**, na ordem de preferência:
 
 ```
-gh issue create --repo luisfmontes/rainforest-mind --title "<achado>" --body-file <arquivo>
+gh issue create --repo johnworkson/rainforest-e --title "<achado>" --body-file <arquivo>
 ```
 
 Se o `gh` não estiver instalado ou autenticado, **não instale nada** (regra 15):
@@ -129,7 +129,7 @@ monte a URL com o corpo já preenchido e entregue o link para a pessoa clicar �
 funciona sem credencial nenhuma e mantém a confirmação humana:
 
 ```
-https://github.com/luisfmontes/rainforest-mind/issues/new?title=<urlencode>&body=<urlencode>
+https://github.com/johnworkson/rainforest-e/issues/new?title=<urlencode>&body=<urlencode>
 ```
 
 Se o corpo for grande demais para a URL, entregue o link com o título e peça
