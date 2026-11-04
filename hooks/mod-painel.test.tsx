@@ -271,6 +271,8 @@ async function montar($: any, on: any, surface: Surface, inicio: number, comUi =
 
   let ui: any = null
   const abrir = async () => {
+    // Fork rainforest-e (2.3.2): a barra nasce escondida; os casos daqui provam a barra.
+    await $.command.run({ command: 'painel', args: 'mostrar' } as never)
     ui = await $.ui.mount({ plugin: 'rainforest-mind', surface, component: 'AbovePrompt', props: PROPS })
     return ui
   }
@@ -577,6 +579,23 @@ for (const surface of ['terminal', 'desktop'] as const) {
     })
 
     await m.ui.unmount()
+  })
+
+  test(`painel (${surface}): fork 2.3.2, a barra nasce escondida e /painel mostrar traz de volta`, async ($, on) => {
+    const m = await montar($, on, surface, em(20, 40), false)
+    const { comecar, terminar, painel, caso } = m
+    await caso(`barra (${surface}): sem /painel mostrar a barra nao desenha nada`, async () => {
+      await comecar()
+      await terminar('ok', { usage: USAGE_REAL })
+      // monta sem o `mostrar` que o `abrir()` do helper faz
+      const ui = await $.ui.mount({ plugin: 'rainforest-mind', surface, component: 'AbovePrompt', props: PROPS })
+      expect((await ui.findAll({ type: 'Text' })).map((t: any) => t.text)).toEqual([])
+      const v = await painel('mostrar')
+      expect(v.text).toContain('volta')
+      await ui.redraw(PROPS)
+      expect((await ui.findAll({ type: 'Text' })).map((t: any) => t.text).join('\n')).toContain('Tokens')
+      await ui.unmount()
+    })
   })
 
   test(`painel (${surface}): nao interativo nao arma o tique nem o relogio`, async ($, on) => {

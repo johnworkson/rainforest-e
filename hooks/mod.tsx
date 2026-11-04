@@ -62,7 +62,9 @@ const VAZIO: RainforestMindPainelStats = {
 
 const faixaDados = atom({ plugin: 'rainforest-mind', key: 'faixaDados' } as const, null as RainforestMindFaixaDados | null)
 const painelStats = atom({ plugin: 'rainforest-mind', key: 'painelStats' } as const, VAZIO)
-const painelOculto = atom({ plugin: 'rainforest-mind', key: 'painelOculto' } as const, false)
+// Fork rainforest-e (2.3.2): a barra nasce escondida; a statusline do usuario ja mostra o que importa.
+// `/painel mostrar` traz de volta na sessao.
+const painelOculto = atom({ plugin: 'rainforest-mind', key: 'painelOculto' } as const, true)
 // Fork rainforest-e: o pane abre so com o Deixado para depois; /painel completo traz o resto.
 const painelCompleto = atom({ plugin: 'rainforest-mind', key: 'painelCompleto' } as const, false)
 const painelMapa = atom({ plugin: 'rainforest-mind', key: 'painelMapa' } as const, mapaVazio() as RainforestMindPainelMapa)

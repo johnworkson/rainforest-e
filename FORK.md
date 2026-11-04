@@ -10,6 +10,7 @@ Instala como `rainforest-mind@rainforest-e`. Só o marketplace mudou de nome. O 
 |---|---|---|
 | 2.3.0 | Marketplace `rainforest-e`. Statusline, `/plugins-em-dia` e testes apontam para ele. | #1 |
 | 2.3.1 | `/painel` abre só com o **Deixado para depois**. Os outros quadros voltam com `/painel completo`. | #2 |
+| 2.3.2 | Barra acima do prompt escondida por padrão (`/painel mostrar` traz). `foco.cjs avanco` aceita data em negrito. `/feedback` abre Issue no fork. | #4 |
 
 ## Trazer novidades do original
 
@@ -19,7 +20,7 @@ git merge upstream/main        # num worktree, nunca na main direto
 claude plugin test .           # a suíte do mod; as baterias node não pegam tudo
 ```
 
-Conflito em `plugin.json`, README ou CHANGELOG: fica a versão maior, mais um patch. Conflito em `hooks/mod.tsx`: o painel enxuto é uma linha (`if (!(await read($, painelCompleto)))`) antes do `return` do pane.
+Conflito em `plugin.json`, README ou CHANGELOG: fica a versão maior, mais um patch. Conflito em `hooks/mod.tsx`: o painel enxuto é uma linha (`if (!(await read($, painelCompleto)))`) antes do `return` do pane, e a barra escondida é o `true` no `atom` do `painelOculto`. Conflito em `commands/feedback.md`: o repositório das Issues fica `johnworkson/rainforest-e`.
 
 Depois do PR mergeado: `claude plugin marketplace update rainforest-e` e `claude plugin update rainforest-mind@rainforest-e`.
 

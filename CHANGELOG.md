@@ -10,6 +10,12 @@ que existe delas é o commit de release (`git log --grep="^Versao "`), e reescre
 29 releases de memória produziria nota bonita e errada. Versão nova daqui em diante
 entra aqui no mesmo commit que sobe o `version` do `plugin.json`.
 
+## 2.3.2 — 2026-11-04 (fork rainforest-e)
+
+- **A barra acima do prompt nasce escondida.** Tokens, custo, cache, ritmo e relógio saíam numa barra que duplicava a statusline do usuário. Ela continua medida e montada; `/painel mostrar` traz de volta na sessão e `/painel esconder` some de novo. O `/painel` (pane) não muda.
+- **`foco.cjs avanco` aceita entradas com a data em negrito.** O FOCO.md escrito à mão usa `- **2026-09-14 — título.**`; a fronteira de entrada só reconhecia `- 2026-09-14`, a entrada nova grudava no bloco inteiro e a conferência recusava **toda** entrada ("a releitura não bate"). A data em negrito também passa a contar para a rotação. Arquivo em CRLF continua em CRLF ao ser regravado.
+- **`/feedback` abre Issue no fork** (`johnworkson/rainforest-e`), não mais no original. As Issues do fork foram ligadas para isso.
+
 ## 2.3.1 — 2026-10-30 (fork rainforest-e)
 
 - **`/painel` abre só com o Deixado para depois.** Fluxos em curso, Mapa da sessão, Onde foi o contexto, Cache de prompt, Subagentes e Custo e tokens continuam sendo medidos, mas só aparecem com `/painel completo`; `/painel enxuto` volta ao padrão. Os quadros seguem montados no código para o merge do original não virar conflito.
