@@ -11,6 +11,7 @@ Instala como `rainforest-mind@rainforest-e`. Só o marketplace mudou de nome. O 
 | 2.3.0 | Marketplace `rainforest-e`. Statusline, `/plugins-em-dia` e testes apontam para ele. | #1 |
 | 2.3.1 | `/painel` abre só com o **Deixado para depois**. Os outros quadros voltam com `/painel completo`. | #2 |
 | 2.3.2 | Barra acima do prompt escondida por padrão (`/painel mostrar` traz). `foco.cjs avanco` aceita data em negrito. `/feedback` abre Issue no fork. | #4 |
+| 2.3.3 | Memória do assunto no `Agent`: nada em auto mode, só do projeto da sessão; reenvio com o bloco não conta duas vezes no teto (Issue #11). | — |
 
 ## Trazer novidades do original
 
@@ -37,3 +38,5 @@ Depois do PR mergeado: `claude plugin marketplace update rainforest-e` e `claude
 - [ ] **Comando de pendências por projeto.** Uma tela só com tudo o que está pendente, separado por projeto, sem abrir um por um. As fontes de hoje estão espalhadas: `FOCO.md`, `ideias.jsonl`, estados de fluxo e o Deixado para depois do `/painel`. Referência de formato: o AnyType, onde o dono já guarda as coisas dele, e que tem MCP. A decidir no brainstorm: ler do AnyType, escrever nele ou só imitar o formato.
 - [ ] **Rever `divergir` e `revisar`** (ver triagem).
 - [ ] **Injeção de contexto a 86 B do teto** (8014 B no `/saude` de 2026-10-30). É o primeiro alvo de performance.
+- [ ] **Filtro de sensibilidade na memória do assunto** (P3 da Issue #11). Não servir memória marcada como contendo nome de cliente ou pessoa. Falta desenho: marcação na gravação (`scripts/memoria.cjs`) ou lista de termos por projeto.
+- [ ] **Memória do assunto para subagente em auto mode** (sobra da P1 da Issue #11). Hoje não sai nada. Caminho possível: `SubagentStart`, se o harness passar a mandar o prompt ou um id que case o agente com o despacho.

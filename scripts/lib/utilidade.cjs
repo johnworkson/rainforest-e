@@ -51,6 +51,8 @@ const CAB_ABERTURA = '## Memória (corpus residentes)';
 const CAB_ASSUNTO = '## Memória do assunto';
 // Prioridade quando a mesma memória chega por mais de um canal na sessão.
 const ORDEM_CANAL = { abertura: 0, pedido: 1, subagente: 2 };
+// Linha informativa do relatório: o canal subagente não injeta em auto mode (Issue #11 do fork, P1).
+const AVISO_SUBAGENTE_AUTO = 'canal subagente: não injeta em auto mode — sessão em auto não serve por ele';
 
 /**
  * Extrai as linhas servidas (`[AAAA-MM-DD (projeto)] ...`) de UM texto de
@@ -1030,6 +1032,9 @@ function gerarRelatorio(conexao) {
     const pct = r.y > 0 ? Math.round((100 * r.x) / r.y) : 0;
     linhas.push(`canal ${canal}: sessões com servida útil ${r.x} de ${r.y} (${pct}%)`);
   }
+  // Issue #11 do fork (P1): em auto mode o hook do Agent não junta nada ao briefing, então as
+  // sessões em auto não servem pelo canal subagente e não entram no Y dele.
+  linhas.push(`${AVISO_SUBAGENTE_AUTO} (Issue #11; desde a 2.3.3)`);
 
   // Buscas ativas (colunas podem faltar em banco antigo que ainda não migrou).
   try {

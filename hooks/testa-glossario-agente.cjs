@@ -11,6 +11,7 @@ const path = require('path');
 const { spawnSync, execFileSync } = require('child_process');
 const { DatabaseSync } = require('node:sqlite');
 const { criarSchema } = require(path.join(__dirname, '..', 'scripts', 'memoria.cjs'));
+const { canonicoDoCaminho } = require(path.join(__dirname, '..', 'scripts', 'lib', 'projeto-canonico.cjs'));
 
 const HOOK = path.join(__dirname, 'memoria-assunto-agente.cjs');
 const PORTARIA = path.join(__dirname, 'portaria.cjs');
@@ -41,7 +42,9 @@ const caixaSem = criarRepo('caixa-sem-glossario', false);
 const raizVazia = path.join(tmp, 'raiz-vazia');
 fs.mkdirSync(raizVazia);
 
-// Raiz com banco, para o caso em que a memoria tambem casa.
+// Raiz com banco, para o caso em que a memoria tambem casa. As memorias sao do projeto da caixa:
+// o canal subagente so serve memoria do projeto da sessao (Issue #11 do fork, P2).
+const PROJ_CAIXA = canonicoDoCaminho(caixa).canonico;
 const raizComBanco = path.join(tmp, 'raiz-com-banco');
 fs.mkdirSync(raizComBanco);
 const db = new DatabaseSync(path.join(raizComBanco, 'rainforest.db'));
@@ -50,13 +53,13 @@ const ins = db.prepare('INSERT INTO observacoes (projeto, conteudo, criada_em, o
 // Uma transacao: fora dela cada INSERT e um fsync, e no runner Windows os 400 levam de 14 s a 140 s (#541).
 db.exec('BEGIN');
 for (let i = 0; i < 400; i++) {
-  ins.run('projeto-teste', 'Registro generico ' + i + '\n\nrotina comum de trabalho numero ' + i + ' sem relevancia', '2026-10-01T10:00:00.000Z', 'f' + i);
+  ins.run(PROJ_CAIXA, 'Registro generico ' + i + '\n\nrotina comum de trabalho numero ' + i + ' sem relevancia', '2026-10-01T10:00:00.000Z', 'f' + i);
 }
 db.exec('COMMIT');
 let n = 0;
 for (const nome of ['Alfa', 'Bravo', 'Charlie', 'Delta']) {
   ins.run(
-    nome === 'Alfa' ? 'projeto-teste' : 'outro-projeto',
+    nome === 'Alfa' ? PROJ_CAIXA : 'outro-projeto',
     'Reconciliacao ' + nome + ' zarquon flibbertigibbet\n\n' + ('zarquon flibbertigibbet zarquon flibbertigibbet quasar ' + nome + ' ').repeat(3),
     '2026-10-0' + (2 + n++) + 'T10:00:00.000Z', 'alvo-' + nome);
 }

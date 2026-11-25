@@ -10,6 +10,15 @@ que existe delas é o commit de release (`git log --grep="^Versao "`), e reescre
 29 releases de memória produziria nota bonita e errada. Versão nova daqui em diante
 entra aqui no mesmo commit que sobe o `version` do `plugin.json`.
 
+## 2.3.3 — 2026-11-24 (fork rainforest-e)
+
+Issue #11: a memória do assunto no briefing do `Agent` derrubava o veredito do auto mode e trazia memória de outro projeto.
+
+- **Em auto mode, o `Agent` sai sem bloco nenhum (P1).** O `memoria-assunto-agente` devolvia `updatedInput` com `## Memória do assunto` (e `## Glossário do repo`) no fim do prompt. O classificador do auto mode avalia a entrada que o modelo escreveu; com a entrada alterada pelo hook, o harness recusava ("a hook changed this call's input after auto mode reviewed it") e todo despacho tinha de ser reenviado. Com `permission_mode: "auto"` o hook agora não devolve nada. Não há canal que leve o texto ao subagente sem mudar a entrada: o `additionalContext` do PreToolUse vai para o pai, e o `SubagentStart` não recebe o prompt nem diz de qual despacho veio quando há vários em paralelo. Fora do auto mode nada muda. O relatório `memoria.cjs utilidade` ganha uma linha avisando que sessão em auto não serve pelo canal subagente.
+- **O canal subagente só serve memória do projeto da sessão (P2).** Antes vinha memória de qualquer projeto que repetisse termos raros do briefing, inclusive de outro cliente. Agora o filtro de projeto vai no SQL, antes do corte de 50 linhas: entra o projeto canônico da sessão (o repositório principal, também a partir de um worktree) e o projeto que o briefing cita explicitamente, pelo caminho, pelo slug ou por um nome composto (`outro-projeto`, `agent_advpl`) que case com um só projeto do banco. Palavra solta (`projeto`) não destrava nada. O hook do pedido (`UserPromptSubmit`) continua mostrando todos os projetos, de propósito.
+- **Reenvio por "hook changed this call's input" não conta duas vezes no teto de despachos (P4).** O `gate-teto-despachos` guarda o sha256 das entradas contadas nos últimos 10 minutos (nunca o texto). Despacho cujo prompt é um prompt contado + um bloco que começa em `## Memória do assunto` ou `## Glossário do repo`, com os outros campos iguais, passa sem contar, uma vez por despacho contado. Despacho idêntico ao anterior continua contando; a lista ilegível vale vazia e nunca nega nem zera o total. Isso estreita a D17 só para esse formato de reenvio. Com a P1, o próprio plugin não provoca mais esse reenvio; a proteção fica para hook de terceiros.
+- **Pendente (P3):** filtro de sensibilidade (não servir memória marcada como contendo nome de cliente ou pessoa). Precisa de desenho: marcação na gravação ou lista de termos por projeto.
+
 ## 2.3.2 — 2026-11-04 (fork rainforest-e)
 
 - **A barra acima do prompt nasce escondida.** Tokens, custo, cache, ritmo e relógio saíam numa barra que duplicava a statusline do usuário. Ela continua medida e montada; `/painel mostrar` traz de volta na sessão e `/painel esconder` some de novo. O `/painel` (pane) não muda.
