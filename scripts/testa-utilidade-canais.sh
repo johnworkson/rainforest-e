@@ -362,6 +362,8 @@ caso('relatorio traz uma linha por canal, a base e as duas fracoes', () => {
   }
   afirma(txt.indexOf('base 2026-10-08: 27% útil') >= 0 && txt.indexOf('base 2026-10-08: 171 de 255 com perda') >= 0, 'faltou a base de 2026-10-08');
   afirma(txt.indexOf('buscas ativas: 10 sessão(ões) principal(is) de 20, 5 subagente(s) de 5') >= 0, 'buscas ativas no relatorio');
+  // Issue #11 do fork (P1): o relatorio avisa que o canal subagente nao injeta em auto mode.
+  afirma(txt.indexOf('canal subagente: não injeta em auto mode') >= 0, 'faltou o aviso do auto mode no canal subagente');
   afirma(txt.indexOf('em qualquer canal: 9 de 20 (45%)') >= 0, 'fracao util');
   afirma(txt.indexOf('sessões com perda: 6 de 20 (30%)') >= 0, 'fracao perda');
   const linhas = txt.trimEnd().split('\n');

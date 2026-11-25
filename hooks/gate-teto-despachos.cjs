@@ -6,7 +6,7 @@
  * Não protege contra: agente despachado fora de fluxo (fora de fluxo passa sem contar; é da portaria)
  *
  * PreToolUse de `Task|Agent`, separado da portaria: a portaria só registra desde a #264
- * e não volta a barrar. Este hook decide só sobre contagem; não lê o prompt do despacho.
+ * e não volta a barrar. Este hook decide só sobre contagem; do prompt só tira o sha256 (P4 da #11, abaixo).
  *
  * Exit 0: admitido (e contado) ou fora de fluxo.
  * Exit 2: negado, motivo no stderr. Nunca exit 1: exit 1 num PreToolUse não barra.
@@ -32,6 +32,51 @@ const { caminhoDoc } = require(path.join(__dirname, "lib", "pastas-docs.cjs"));
 
 const DESPACHOS_POR_LIBERACAO = 10;
 const ESPERA_TRAVA_SEG = 10;
+
+/* Reenvio depois de "a hook changed this call's input" (Issue #11 do fork, P4).
+ * Em auto mode, um hook que devolve `updatedInput` no Agent faz o harness recusar o despacho, e o
+ * modelo reenvia a entrada ja alterada: o prompt original + o bloco que o hook juntou no fim. Os dois
+ * passam por aqui e contavam duas vezes. Desde a 2.3.3 o memoria-assunto-agente nao altera nada em
+ * auto mode (P1), entao isto e so a protecao barata para o caso que sobrar (outro hook, modo que nao
+ * chega no payload). Regra estreita, para nao abrir o teto:
+ * - so perdoa quando o prompt novo = um prompt CONTADO ha menos de JANELA_REENVIO_MS + um bloco que
+ *   comeca num dos cabecalhos de MARCAS_BLOCO, com os demais campos da entrada iguais;
+ * - cada despacho contado perdoa no maximo um reenvio (a impressao sai da lista ao ser usada);
+ * - despacho identico ao anterior continua contando (D17 intacto para o laco que repete a mesma entrada).
+ * Guarda so o sha256 da entrada, nunca o texto. Lista ilegivel vale vazia: ela nunca nega nem zera o total. */
+const JANELA_REENVIO_MS = 10 * 60 * 1000;
+const MAX_RECENTES = 50;
+const MARCAS_BLOCO = ["\n\n## Memória do assunto", "\n\n## Glossário do repo"];
+
+function impressao(entrada, prompt) {
+  const e = entrada && typeof entrada === "object" ? { ...entrada } : {};
+  if (prompt !== undefined) e.prompt = prompt;
+  const ordenado = Object.keys(e).sort().map((k) => [k, e[k]]);
+  return require("crypto").createHash("sha256").update(JSON.stringify(ordenado)).digest("hex");
+}
+
+function recentesValidas(lista, agora) {
+  if (!Array.isArray(lista)) return [];
+  return lista.filter(
+    (r) => r && typeof r.h === "string" && /^[0-9a-f]{64}$/.test(r.h) && Number.isFinite(r.em) && agora - r.em <= JANELA_REENVIO_MS && r.em <= agora
+  );
+}
+
+// Indice em `recentes` do despacho de que este e o reenvio com bloco, ou -1.
+function indiceDoReenvio(entrada, recentes) {
+  if (!entrada || typeof entrada !== "object" || typeof entrada.prompt !== "string" || recentes.length === 0) return -1;
+  const prompt = entrada.prompt;
+  for (const marca of MARCAS_BLOCO) {
+    let i = prompt.indexOf(marca);
+    while (i > 0) {
+      const h = impressao(entrada, prompt.slice(0, i));
+      const achou = recentes.findIndex((r) => r.h === h);
+      if (achou !== -1) return achou;
+      i = prompt.indexOf(marca, i + 1);
+    }
+  }
+  return -1;
+}
 
 function dizer(texto) {
   try {
@@ -193,6 +238,21 @@ function main() {
           `Contador ilegivel nao e lido como zero: isso zeraria o teto em silencio. Nada foi reescrito.`
       );
     }
+    const agora = Date.now();
+    const recentes = recentesValidas(obj.recentes, agora);
+    const gravar = (novoTotal, lista) => {
+      const tmp = `${arquivo}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, `${JSON.stringify({ total: novoTotal, recentes: lista.slice(-MAX_RECENTES) })}\n`, "utf8");
+      fs.renameSync(tmp, arquivo);
+    };
+    // #11, P4: reenvio do mesmo despacho com o bloco que um hook juntou ao prompt (recusa do auto mode
+    // "a hook changed this call's input") e o mesmo despacho: passa sem contar, uma vez por despacho contado.
+    const perdoado = indiceDoReenvio(payload.tool_input, recentes);
+    if (perdoado !== -1) {
+      recentes.splice(perdoado, 1);
+      gravar(total, recentes);
+      return null;
+    }
     if (total >= teto) {
       const saida = daJanela
         ? ` Para destravar, com a palavra do usuario: declarar \`teto-despachos: N\` no cabecalho do plano, ou node scripts/estado.cjs liberar-teto --slug ${slug} --motivo "<motivo>" (+${DESPACHOS_POR_LIBERACAO}).`
@@ -203,9 +263,8 @@ function main() {
       );
     }
 
-    const tmp = `${arquivo}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, `${JSON.stringify({ total: total + 1 })}\n`, "utf8");
-    fs.renameSync(tmp, arquivo);
+    recentes.push({ h: impressao(payload.tool_input), em: agora });
+    gravar(total + 1, recentes);
     return null;
   }, ESPERA_TRAVA_SEG);
   if (motivo) negar(motivo);

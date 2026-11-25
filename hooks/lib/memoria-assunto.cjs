@@ -7,6 +7,7 @@
 const path = require('path');
 const { filtroVivas } = require(path.join(__dirname, '..', '..', 'scripts', 'memoria.cjs'));
 const { formatarObservacao, MOLDURA_MEMORIA } = require('./memoria-sessao.cjs');
+const { slugDoCaminho, casarCurto } = require(path.join(__dirname, '..', '..', 'scripts', 'lib', 'projeto-canonico.cjs'));
 
 // bm25 do FTS5 é negativo (mais negativo = mais relevante). Entra a candidata
 // com bm25 <= LIMIAR_BM25. Calibrado em docs/rainforest/referencia/2026-10-08-limiar-memoria-assunto.md.
@@ -43,18 +44,45 @@ function construirQueryAssunto(conexao, texto, tetoFracao = TETO_DF_FRACAO) {
   return raros.slice(0, LIMITE_TERMOS).map((x) => '"' + x.t.replace(/"/g, '""') + '"').join(' OR ');
 }
 
-function buscarPorAssunto(conexao, texto, { projetoAtual, jaServidos = new Set(), max = 3, limiar = LIMIAR_BM25 } = {}) {
+// Projetos que o canal subagente pode servir (#11, P2): o da sessao (canonico e nome curto) e
+// os que o briefing cita explicitamente. Citar = o texto traz o slug inteiro de outro projeto
+// (caminho ou slug) ou um nome composto (com `-` ou `_`, ex.: `outro-projeto`) que casa com UM
+// so projeto do banco pelo sufixo (casarCurto). Palavra solta ("projeto") nao destrava nada: ela
+// casaria o fim de qualquer nome. Devolve a lista em minusculas. Lanca se o banco falhar.
+function projetosPermitidos(conexao, texto, { canonico, curto } = {}) {
+  const permitidos = new Set([canonico, curto].filter(Boolean).map((p) => String(p).toLowerCase()));
+  const projetos = conexao.prepare('SELECT DISTINCT projeto FROM observacoes').all().map((l) => String(l.projeto));
+  const comBorda = '-' + slugDoCaminho(String(texto || '')).toLowerCase() + '-';
+  const compostos = new Set(String(texto || '').match(/[\p{L}\p{N}]+(?:[_-][\p{L}\p{N}]+)+/gu) || []);
+  for (const p of projetos) {
+    const min = p.toLowerCase();
+    if (permitidos.has(min)) continue;
+    if (/[^a-z0-9]/.test(min) && min.length >= 6 && comBorda.includes('-' + min + '-')) permitidos.add(min);
+  }
+  for (const nome of compostos) {
+    const r = casarCurto(nome, projetos);
+    if (r.tipo === 'unico') permitidos.add(r.canonico.toLowerCase());
+  }
+  return Array.from(permitidos);
+}
+
+// `projetos` (opcional): so linhas desses projetos (comparacao sem caixa). O filtro vai no WHERE,
+// antes do LIMIT, para memoria de outro projeto nao empurrar a do projeto pedido para fora (2.1.1, D3).
+function buscarPorAssunto(conexao, texto, { projetoAtual, jaServidos = new Set(), max = 3, limiar = LIMIAR_BM25, projetos = null } = {}) {
   try {
     const query = construirQueryAssunto(conexao, texto);
     if (!query) return [];
+    const lista = Array.isArray(projetos) ? projetos.map((p) => String(p).toLowerCase()) : null;
+    if (lista && lista.length === 0) return [];
+    const filtroProjeto = lista ? `AND lower(o.projeto) IN (${lista.map(() => '?').join(', ')})` : '';
     const linhas = conexao
       .prepare(
         `SELECT o.id, o.projeto, o.conteudo, o.criada_em, bm25(observacoes_fts) AS bm25
          FROM observacoes_fts JOIN observacoes o ON o.id = observacoes_fts.rowid
-         WHERE observacoes_fts MATCH ? AND o.consolidada_em IS NULL ${filtroVivas('o.')}
+         WHERE observacoes_fts MATCH ? AND o.consolidada_em IS NULL ${filtroVivas('o.')} ${filtroProjeto}
          ORDER BY bm25(observacoes_fts) LIMIT ${LIMITE_SQL}`
       )
-      .all(query)
+      .all(query, ...(lista || []))
       .filter((l) => l.bm25 <= limiar);
     const candidatas = linhas.filter((l) => !jaServidos.has(l.id));
     const atual = String(projetoAtual).toLowerCase();
@@ -89,4 +117,4 @@ function montarBlocoAssunto(linhas) {
   return montarBlocoAssuntoComIds(linhas).bloco;
 }
 
-module.exports = { LIMIAR_BM25, TETO_DF_FRACAO, construirQueryAssunto, buscarPorAssunto, montarBlocoAssunto, montarBlocoAssuntoComIds };
+module.exports = { LIMIAR_BM25, TETO_DF_FRACAO, construirQueryAssunto, buscarPorAssunto, projetosPermitidos, montarBlocoAssunto, montarBlocoAssuntoComIds };

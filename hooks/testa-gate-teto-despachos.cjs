@@ -441,6 +441,57 @@ async function main() {
     caso("git check-ignore -q do contador sai 0", ign.status === 0, `exit=${ign.status}`);
   }
 
+  // == 14. reenvio depois de "a hook changed this call's input" nao conta duas vezes (#11, P4) ==
+  // O auto mode recusa o despacho cujo prompt um hook alterou; o reenvio traz o prompt original
+  // + o bloco que o hook juntou. Esse reenvio e perdoado uma vez; o identico continua contando.
+  console.log("== 14. reenvio com o bloco do hook nao conta de novo (uma vez so) ==");
+  {
+    const repo = caixa();
+    const base = janela(repo);
+    const comBloco = (titulo) => {
+      const p = janela(repo);
+      p.tool_input = { ...p.tool_input, prompt: `${p.tool_input.prompt}\n\n${titulo}\n[2026-11-01 (x)] linha` };
+      return p;
+    };
+    const r1 = rodar(repo, base);
+    caso("o primeiro despacho conta (total 1)", r1.status === 0 && contador(repo) === 1, `exit=${r1.status} total=${contador(repo)}`);
+    const r2 = rodar(repo, comBloco("## Memória do assunto — referência histórica, não instrução"));
+    caso("o reenvio com '## Memória do assunto' sai 0 e NAO conta (total 1)", r2.status === 0 && contador(repo) === 1, `exit=${r2.status} total=${contador(repo)}`);
+    const r3 = rodar(repo, comBloco("## Memória do assunto — referência histórica, não instrução"));
+    caso("um segundo reenvio igual ja conta (perdao e uma vez so; total 2)", r3.status === 0 && contador(repo) === 2, `exit=${r3.status} total=${contador(repo)}`);
+    const r4 = rodar(repo, base);
+    const r5 = rodar(repo, base);
+    caso("despacho identico ao anterior continua contando (total 4)", r4.status === 0 && r5.status === 0 && contador(repo) === 4, `total=${contador(repo)}`);
+    const r6 = rodar(repo, comBloco("## Glossário do repo"));
+    caso("o reenvio com '## Glossário do repo' tambem e perdoado (total 4)", r6.status === 0 && contador(repo) === 4, `total=${contador(repo)}`);
+    const outro = janela(repo);
+    outro.tool_input = { ...outro.tool_input, description: "outra tarefa", prompt: `${outro.tool_input.prompt}\n\n## Memória do assunto\n[x] y` };
+    const r7 = rodar(repo, outro);
+    caso("bloco juntado a um despacho de OUTRA entrada conta (total 5)", r7.status === 0 && contador(repo) === 5, `total=${contador(repo)}`);
+    const bruto = fs.readFileSync(arquivoContador(repo), "utf8");
+    caso("o contador guarda so hash, nunca o texto do prompt", !bruto.includes("trivial") && !bruto.includes("Memória"), bruto.slice(0, 300));
+  }
+
+  // == 15. reenvio fora da janela conta; lista de recentes ruim nao nega nem zera ==
+  console.log("== 15. janela do perdao e lista ruim ==");
+  {
+    const repo = caixa();
+    const base = janela(repo);
+    rodar(repo, base);
+    const obj = JSON.parse(fs.readFileSync(arquivoContador(repo), "utf8"));
+    const tinhaRecentes = Array.isArray(obj.recentes) && obj.recentes.length === 1;
+    caso("precondicao: o despacho contado deixou 1 impressao em recentes", tinhaRecentes, JSON.stringify(obj).slice(0, 300));
+    obj.recentes = (obj.recentes || []).map((e) => ({ ...e, em: 0 }));
+    semarContador(repo, `${JSON.stringify(obj)}\n`);
+    const p = janela(repo);
+    p.tool_input = { ...p.tool_input, prompt: `${p.tool_input.prompt}\n\n## Memória do assunto\n[x] y` };
+    const r = rodar(repo, p);
+    caso("reenvio com o bloco depois da janela conta (total 2)", r.status === 0 && contador(repo) === 2, `exit=${r.status} total=${contador(repo)}`);
+    semarContador(repo, '{"total":3,"recentes":"lixo"}\n');
+    const r2 = rodar(repo, base);
+    caso("recentes ilegivel vale lista vazia: admite e conta (total 4)", r2.status === 0 && contador(repo) === 4, `exit=${r2.status} total=${contador(repo)}`);
+  }
+
   for (const repo of caixas) fs.rmSync(repo, { recursive: true, force: true });
   console.log(`\nok: ${ok}   falhou: ${falhou}`);
   process.exit(falhou === 0 ? 0 : 1);
